@@ -1,0 +1,49 @@
+{
+  "expo": {
+    "name": "Aware",
+    "slug": "aware",
+    "scheme": "aware",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "backgroundColor": "#012F13",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow Aware to scan product barcodes and take photos for AI product analysis."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Aware to access your photos when selecting product images for AI analysis.",
+          "cameraPermission": "Allow Aware to use the camera for product scanning and AI analysis."
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.aware.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Allow Aware to scan product barcodes and take photos for AI product analysis.",
+        "NSPhotoLibraryUsageDescription": "Allow Aware to access your photo library for product image analysis."
+      }
+    },
+    "android": {
+      "package": "com.aware.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#012F13"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}

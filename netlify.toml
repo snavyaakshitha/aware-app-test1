@@ -1,0 +1,17 @@
+[build]
+  command   = "npx expo export -p web"
+  publish   = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# Let browsers use getUserMedia for expo-camera on your Netlify domain
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Permissions-Policy = "camera=(self)"
