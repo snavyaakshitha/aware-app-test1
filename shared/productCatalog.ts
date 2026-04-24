@@ -1,7 +1,7 @@
 /**
  * Unified barcode + text search across Open Food/Beauty/Products Facts, USDA FDC, and openFDA.
  */
-import type { OffFetchResult, OffProductSnapshot, ProductCatalogSource } from './openFoodFacts';
+import type { OffFetchResult, OffProductSnapshot, OffNutriments, ProductCatalogSource } from './openFoodFacts';
 
 const UA = 'Aware/1.0 (mobile app; community-data; not-a-bot)';
 
@@ -15,7 +15,31 @@ const OPEN_FACTS_FIELDS = [
   'nutriscore_grade',
   'nova_group',
   'ingredients_analysis_tags',
+  'nutriments',
 ].join(',');
+
+function parseNum(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v));
+  return isNaN(n) ? null : n;
+}
+
+function extractNutriments(p: Record<string, unknown>): OffNutriments | null {
+  const nm = (p.nutriments ?? {}) as Record<string, unknown>;
+  const result: OffNutriments = {
+    energy_kj_100g:     parseNum(nm['energy-kj_100g']     ?? nm['energy_kj_100g']),
+    energy_kcal_100g:   parseNum(nm['energy-kcal_100g']   ?? nm['energy_kcal_100g']),
+    fat_100g:           parseNum(nm['fat_100g']),
+    saturated_fat_100g: parseNum(nm['saturated-fat_100g'] ?? nm['saturated_fat_100g']),
+    carbohydrates_100g: parseNum(nm['carbohydrates_100g']),
+    sugars_100g:        parseNum(nm['sugars_100g']),
+    fiber_100g:         parseNum(nm['fiber_100g']),
+    proteins_100g:      parseNum(nm['proteins_100g']),
+    sodium_100g:        parseNum(nm['sodium_100g']),
+    salt_100g:          parseNum(nm['salt_100g']),
+  };
+  return Object.values(result).some((v) => v !== null) ? result : null;
+}
 
 type OpenFactsBase = {
   source: ProductCatalogSource;
@@ -73,6 +97,7 @@ async function fetchOpenFactsStyle(
       ingredientsAnalysisTags: Array.isArray(p.ingredients_analysis_tags)
         ? (p.ingredients_analysis_tags as string[])
         : [],
+      nutriments: extractNutriments(p),
       catalogSource: source,
       catalogSourceLabel: label,
     };
@@ -145,6 +170,7 @@ async function fetchUsdaFdcProduct(barcode: string): Promise<OffFetchResult | nu
       nutriscoreGrade: null,
       novaGroup: null,
       ingredientsAnalysisTags: [],
+      nutriments: null,
       catalogSource: 'usda_fdc',
       catalogSourceLabel: 'USDA FoodData Central',
     };
@@ -216,6 +242,7 @@ async function fetchOpenFdaDrugLabel(barcode: string): Promise<OffFetchResult | 
         nutriscoreGrade: null,
         novaGroup: null,
         ingredientsAnalysisTags: [],
+        nutriments: null,
         catalogSource: 'openfda',
         catalogSourceLabel: 'openFDA (drug labels)',
       };

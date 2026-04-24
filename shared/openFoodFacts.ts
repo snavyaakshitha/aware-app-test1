@@ -1,5 +1,3 @@
-import type { UserPreferences } from './types';
-import type { IngredientToAvoid, Allergen, HealthCondition } from './types';
 
 const DEFAULT_BASE = 'https://world.openfoodfacts.org';
 
@@ -8,9 +6,9 @@ export type ProductCatalogSource =
   | 'off' | 'obf' | 'opf'
   | 'usda_fdc'
   | 'openfda'
-  | 'ai_gemini'    // Gemini 2.0 Flash vision extraction
-  | 'ai_gpt'       // GPT-4o mini vision extraction (Gemini fallback)
-  | 'supabase_cache'; // Fetched from our own products table
+  | 'ai_gemini'
+  | 'ai_gpt'
+  | 'supabase_cache';
 
 export type NutritionFacts = {
   calories: string | null;
@@ -21,6 +19,20 @@ export type NutritionFacts = {
   sugar: string | null;
   fiber: string | null;
   serving_size: string | null;
+};
+
+/** Universal nutriments from OFF (per 100g). All keys are number | null. */
+export type OffNutriments = {
+  energy_kj_100g: number | null;
+  energy_kcal_100g: number | null;
+  fat_100g: number | null;
+  saturated_fat_100g: number | null;
+  carbohydrates_100g: number | null;
+  sugars_100g: number | null;
+  fiber_100g: number | null;
+  proteins_100g: number | null;
+  sodium_100g: number | null;
+  salt_100g: number | null;
 };
 
 export type OffProductSnapshot = {
@@ -34,6 +46,7 @@ export type OffProductSnapshot = {
   nutriscoreGrade: string | null;
   novaGroup: number | null;
   ingredientsAnalysisTags: string[];
+  nutriments: OffNutriments | null;           // OFF nutriments (per 100g) — present for all OFF products
   catalogSource?: ProductCatalogSource;
   catalogSourceLabel?: string;
   // AI-extracted extras (only present when catalogSource = 'ai_gemini' | 'ai_gpt')
@@ -52,6 +65,12 @@ function getBaseUrl(): string {
   return b && b.length > 0 ? b : DEFAULT_BASE;
 }
 
+function parseNum(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  const n = typeof v === 'number' ? v : parseFloat(String(v));
+  return isNaN(n) ? null : n;
+}
+
 export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFetchResult> {
   const fields = [
     'product_name',
@@ -63,6 +82,8 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFet
     'nutriscore_grade',
     'nova_group',
     'ingredients_analysis_tags',
+    'nutriments',            // ← was missing — required for sugar/fat/protein headlines
+    'serving_size',
   ].join(',');
 
   const url = `${getBaseUrl()}/api/v2/product/${encodeURIComponent(barcode)}?fields=${fields}`;
@@ -91,6 +112,23 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFet
 
     const p = json.product;
     const nova = p.nova_group;
+    const nm = (p.nutriments ?? {}) as Record<string, unknown>;
+
+    const nutriments: OffNutriments = {
+      energy_kj_100g:      parseNum(nm['energy-kj_100g']     ?? nm['energy_kj_100g']),
+      energy_kcal_100g:    parseNum(nm['energy-kcal_100g']   ?? nm['energy_kcal_100g']),
+      fat_100g:            parseNum(nm['fat_100g']),
+      saturated_fat_100g:  parseNum(nm['saturated-fat_100g'] ?? nm['saturated_fat_100g']),
+      carbohydrates_100g:  parseNum(nm['carbohydrates_100g']),
+      sugars_100g:         parseNum(nm['sugars_100g']),
+      fiber_100g:          parseNum(nm['fiber_100g']),
+      proteins_100g:       parseNum(nm['proteins_100g']),
+      sodium_100g:         parseNum(nm['sodium_100g']),
+      salt_100g:           parseNum(nm['salt_100g']),
+    };
+
+    const hasNutriments = Object.values(nutriments).some((v) => v !== null);
+
     return {
       ok: true,
       product: {
@@ -106,6 +144,7 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFet
         ingredientsAnalysisTags: Array.isArray(p.ingredients_analysis_tags)
           ? (p.ingredients_analysis_tags as string[])
           : [],
+        nutriments: hasNutriments ? nutriments : null,
         catalogSource: 'off',
         catalogSourceLabel: 'Open Food Facts',
       },
@@ -117,149 +156,4 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFet
       message: e instanceof Error ? e.message : 'Network error',
     };
   }
-}
-
-/** Map OFF allergen tags (e.g. en:gluten) to rough keyword hits vs user allergens. */
-const OFF_TAG_TO_ALLERGEN: Record<string, Allergen[]> = {
-  'en:gluten': ['gluten', 'wheat'],
-  'en:milk': ['dairy', 'lactose'],
-  'en:eggs': ['eggs'],
-  'en:peanuts': ['peanuts'],
-  'en:nuts': ['tree_nuts'],
-  'en:soybeans': ['soy'],
-  'en:fish': ['fish'],
-  'en:celery': [],
-  'en:mustard': [],
-  'en:sesame-seeds': ['sesame'],
-  'en:sulphur-dioxide-and-sulphites': ['sulfites'],
-  'en:crustaceans': ['shellfish'],
-  'en:molluscs': ['shellfish'],
-};
-
-const AVOID_KEYWORDS: Partial<Record<IngredientToAvoid, string[]>> = {
-  hfcs: ['high fructose', 'hfcs', 'glucose-fructose'],
-  aspartame: ['aspartame'],
-  msg: ['monosodium glutamate', ' msg'],
-  trans_fats: ['trans fat', 'hydrogenated'],
-  partially_hydrogenated: ['partially hydrogenated'],
-  artificial_dyes: ['red 40', 'yellow 5', 'yellow 6', 'tartrazine', 'fd&c'],
-  carrageenan: ['carrageenan'],
-  maltodextrin: ['maltodextrin'],
-  seed_oils: ['canola', 'soybean oil', 'sunflower oil', 'corn oil'],
-};
-
-export type HealthFitResult = {
-  healthScore: number;
-  cleanScore: number;
-  concerns: string[];
-  positives: string[];
-  allergensHit: string[];
-};
-
-export function scoreProductForProfile(
-  off: OffProductSnapshot,
-  prefs: Partial<UserPreferences> | null
-): HealthFitResult {
-  const concerns: string[] = [];
-  const positives: string[] = [];
-  const allergensHit: string[] = [];
-
-  const ing = off.ingredientsText.toLowerCase();
-  const isFoodish =
-    !off.catalogSource || off.catalogSource === 'off' || off.catalogSource === 'usda_fdc';
-  const userAllergens = prefs?.allergens ?? [];
-  const avoids = prefs?.ingredientsToAvoid ?? [];
-  const custom = prefs?.customAvoids?.map((c) => c.toLowerCase()) ?? [];
-
-  for (const tag of off.allergensTags) {
-    const mapped = OFF_TAG_TO_ALLERGEN[tag];
-    if (!mapped || mapped.length === 0) continue;
-    for (const a of mapped) {
-      if (userAllergens.includes(a)) {
-        allergensHit.push(tag.replace(/^en:/, '').replace(/-/g, ' '));
-      }
-    }
-  }
-
-  for (const a of userAllergens) {
-    const hints: Record<string, string[]> = {
-      gluten: ['wheat', 'barley', 'rye', 'gluten'],
-      dairy: ['milk', 'cream', 'butter', 'whey', 'casein', 'lactose'],
-      eggs: ['egg'],
-      peanuts: ['peanut'],
-      tree_nuts: ['almond', 'cashew', 'hazelnut', 'walnut', 'pecan'],
-      soy: ['soy'],
-      fish: ['fish'],
-      shellfish: ['shrimp', 'crab', 'lobster', 'shellfish'],
-      sesame: ['sesame'],
-    };
-    const words = hints[a];
-    if (words && words.some((w) => ing.includes(w))) {
-      if (!allergensHit.includes(a)) allergensHit.push(String(a).replace(/_/g, ' '));
-    }
-  }
-
-  for (const id of avoids) {
-    const keys = AVOID_KEYWORDS[id];
-    if (!keys) continue;
-    if (keys.some((k) => ing.includes(k))) {
-      concerns.push(`Contains avoided ingredient pattern: ${String(id).replace(/_/g, ' ')}`);
-    }
-  }
-  for (const c of custom) {
-    if (c.length > 1 && ing.includes(c)) {
-      concerns.push(`Contains your custom avoid: "${c}"`);
-    }
-  }
-
-  const conditions = (prefs?.healthConditions ?? []) as HealthCondition[];
-  if (isFoodish) {
-    if (conditions.includes('diabetes_t2') || conditions.includes('diabetes_t1')) {
-      if (/\b(sugar|syrup|glucose fructose|maltodextrin)\b/i.test(off.ingredientsText)) {
-        concerns.push('High glycemic ingredients — review for diabetes');
-      }
-    }
-    if (conditions.includes('hypertension')) {
-      const low = off.ingredientsText.toLowerCase();
-      if (/\b(sodium|salt|msg|monosodium)\b/i.test(low)) {
-        concerns.push('Sodium-related ingredients — review for blood pressure');
-      }
-    }
-  }
-
-  if (off.ingredientsAnalysisTags.includes('en:palm-oil')) {
-    concerns.push('Contains palm oil (processing / sourcing concern for some users)');
-  }
-
-  if (isFoodish) {
-    if (off.novaGroup != null && off.novaGroup >= 4) {
-      concerns.push('Ultra-processed food (NOVA 4)');
-    } else if (off.novaGroup === 1) {
-      positives.push('Unprocessed / minimally processed (NOVA 1)');
-    }
-
-    if (off.nutriscoreGrade === 'a' || off.nutriscoreGrade === 'b') {
-      positives.push(`Nutri-Score ${String(off.nutriscoreGrade).toUpperCase()}`);
-    }
-  }
-
-  let healthScore = 88;
-  healthScore -= allergensHit.length * 22;
-  healthScore -= concerns.length * 8;
-  healthScore = Math.max(0, Math.min(100, Math.round(healthScore)));
-
-  let cleanScore = 75;
-  cleanScore -= concerns.filter((c) => c.includes('avoided')).length * 12;
-  if (isFoodish) {
-    cleanScore -= off.novaGroup != null && off.novaGroup >= 4 ? 15 : 0;
-  }
-  cleanScore = Math.max(0, Math.min(100, Math.round(cleanScore)));
-
-  return {
-    healthScore,
-    cleanScore,
-    concerns,
-    positives,
-    allergensHit,
-  };
 }

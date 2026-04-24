@@ -68,6 +68,7 @@ export function aiResultToSnapshot(
     nutriscoreGrade: null,
     novaGroup: null,
     ingredientsAnalysisTags: [],
+    nutriments: null,   // AI products use nutritionFacts (string values) instead
     catalogSource: source,
     catalogSourceLabel: sourceLabel,
     nutritionFacts: ai.nutrition_facts ?? null,
@@ -143,6 +144,7 @@ export async function fetchCachedProduct(barcode: string): Promise<OffFetchResul
       nutriscoreGrade: null,
       novaGroup: null,
       ingredientsAnalysisTags: [],
+      nutriments: null,   // Supabase cache doesn't store OFF nutriments format
       catalogSource,
       catalogSourceLabel,
       nutritionFacts: data.nutrition_facts
@@ -205,25 +207,94 @@ export async function callAnalyzeProduct(
 ): Promise<AIProductResult> {
   const anonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-  const res = await fetch(EDGE_FUNCTION_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'apikey': anonKey,
-      'Authorization': `Bearer ${anonKey}`,
-    },
-    body: JSON.stringify({
-      barcode,
-      frontImage: frontImageBase64,
-      labelImage: labelImageBase64,
-      userId: userId ?? undefined,
-    }),
-  });
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({ error: 'Network error' })) as { error?: string; detail?: string };
-    throw new Error(errBody.error ?? `HTTP ${res.status}`);
+  if (!anonKey) {
+    throw new Error('Supabase configuration missing. Contact support.');
   }
 
-  return (await res.json()) as AIProductResult;
+  // Validate image data
+  if (!frontImageBase64 || !labelImageBase64) {
+    throw new Error('Image data is incomplete. Please retake the photos.');
+  }
+
+  if (!frontImageBase64.includes('data:') && frontImageBase64.length < 1000) {
+    throw new Error('Front image is too small. Please take a clearer photo.');
+  }
+
+  if (!labelImageBase64.includes('data:') && labelImageBase64.length < 1000) {
+    throw new Error('Label image is too small. Please take a clearer photo.');
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45_000); // 45 second timeout
+
+  try {
+    const res = await fetch(EDGE_FUNCTION_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': anonKey,
+        'Authorization': `Bearer ${anonKey}`,
+      },
+      body: JSON.stringify({
+        barcode,
+        frontImage: frontImageBase64,
+        labelImage: labelImageBase64,
+        userId: userId ?? undefined,
+      }),
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeout);
+
+    // Parse error details
+    let errorMsg = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as { error?: string; detail?: string; message?: string };
+      if (errBody.error) errorMsg = errBody.error;
+      if (errBody.detail) errorMsg = `${errorMsg} (${errBody.detail})`;
+
+      // Log for debugging
+      console.warn(`[callAnalyzeProduct] ${res.status}: ${errorMsg}`);
+    } catch {
+      console.warn(`[callAnalyzeProduct] ${res.status}: Could not parse error`);
+    }
+
+    if (!res.ok) {
+      // Distinguish between provider failures and infrastructure issues
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        throw new Error(
+          'AI analysis service is temporarily unavailable. Please try again in a moment, or use a regular scan.',
+        );
+      }
+      if (res.status === 400) {
+        throw new Error('Invalid image format. Please retake the photos with better quality.');
+      }
+      if (res.status === 429) {
+        throw new Error('Too many requests. Please wait a moment before trying again.');
+      }
+      throw new Error(errorMsg);
+    }
+
+    const result = (await res.json()) as AIProductResult;
+
+    // Validate result structure
+    if (!result.product_name && !result.brand && (!result.ingredients || result.ingredients.length === 0)) {
+      throw new Error('AI could not extract product information. Please try again with clearer photos.');
+    }
+
+    console.log(`[callAnalyzeProduct] Success: ${result.model_used} (${result.latency_ms}ms)`);
+    return result;
+  } catch (err) {
+    clearTimeout(timeout);
+
+    if (err instanceof Error) {
+      // Abort error (timeout)
+      if (err.name === 'AbortError') {
+        throw new Error('Image analysis took too long. Please try again with clearer photos or better lighting.');
+      }
+      throw err;
+    }
+
+    throw new Error('Network error. Please check your connection and try again.');
+  }
 }

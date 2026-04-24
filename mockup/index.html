@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Aware — Result Screen Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #1a1a1a;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 24px 16px 48px;
+  }
+  .switcher { display: flex; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; justify-content: center; }
+  .switcher button { padding: 8px 14px; border-radius: 20px; border: 1.5px solid #444; background: #2a2a2a; color: #aaa; font-size: 12px; cursor: pointer; }
+  .switcher button.active { background: #fff; color: #111; border-color: #fff; font-weight: 600; }
+  .phone { width: 390px; background: #111; border-radius: 44px; border: 2px solid #333; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+  .statusbar { height: 44px; display: flex; align-items: center; justify-content: space-between; padding: 0 28px; font-size: 12px; font-weight: 600; color: #fff; }
+  .navbar { display: flex; align-items: center; padding: 4px 20px 12px; gap: 12px; }
+  .back-btn { width: 32px; height: 32px; border-radius: 16px; background: #222; display: flex; align-items: center; justify-content: center; color: #fff; font-size: 16px; cursor: pointer; }
+  .navbar-title { font-size: 13px; color: #888; }
+  .scroll { overflow-y: auto; max-height: 760px; padding: 0 16px 32px; scrollbar-width: none; }
+  .scroll::-webkit-scrollbar { display: none; }
+  .product-header { display: flex; gap: 14px; align-items: flex-start; margin-bottom: 20px; }
+  .product-image { width: 64px; height: 64px; border-radius: 14px; background: #222; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 28px; }
+  .product-meta { flex: 1; }
+  .product-brand { font-size: 11px; color: #666; font-weight: 500; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 3px; }
+  .product-name { font-size: 18px; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 4px; }
+  .product-barcode { font-size: 11px; color: #555; }
+  .verdict-block { margin-bottom: 16px; }
+  .verdict-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px 6px 10px; border-radius: 100px; font-size: 13px; font-weight: 700; letter-spacing: 0.3px; margin-bottom: 8px; }
+  .verdict-pill.avoid { background: #3d0a0a; color: #ff4d4d; border: 1.5px solid #6b1a1a; }
+  .verdict-pill.check { background: #2e2000; color: #ffb830; border: 1.5px solid #5a3d00; }
+  .verdict-pill.acceptable { background: #0d1f0d; color: #4caf50; border: 1.5px solid #1e4d1e; }
+  .verdict-pill.good { background: #0a1f12; color: #2ed573; border: 1.5px solid #1a5c30; }
+  .verdict-dot { width: 7px; height: 7px; border-radius: 50%; }
+  .avoid .verdict-dot { background: #ff4d4d; }
+  .check .verdict-dot { background: #ffb830; }
+  .acceptable .verdict-dot { background: #4caf50; }
+  .good .verdict-dot { background: #2ed573; }
+  .verdict-headline { font-size: 22px; font-weight: 800; color: #fff; line-height: 1.25; margin-bottom: 6px; }
+  .verdict-subline { font-size: 14px; color: #888; line-height: 1.5; }
+  .card { background: #1a1a1a; border-radius: 16px; border: 1px solid #2a2a2a; padding: 14px; margin-bottom: 10px; }
+  .card.red-border { border-color: #4a1a1a; }
+  .card.yellow-border { border-color: #4a3a00; }
+  .card.green-border { border-color: #1a4a1a; }
+  .card-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #555; margin-bottom: 10px; }
+  .safety-row { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+  .safety-row:last-child { margin-bottom: 0; }
+  .safety-icon { font-size: 15px; margin-top: 1px; flex-shrink: 0; }
+  .safety-title { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+  .safety-desc { font-size: 12px; color: #888; line-height: 1.45; }
+  .expand-btn { font-size: 11px; color: #555; margin-top: 10px; display: flex; align-items: center; gap: 4px; cursor: pointer; user-select: none; padding: 4px 0; }
+  .expand-btn:hover { color: #888; }
+  .hidden-items { display: none; }
+  .hidden-items.open { display: block; }
+  .metrics-row { display: flex; gap: 10px; margin-bottom: 10px; }
+  .metric-card { flex: 1; background: #1a1a1a; border: 1px solid #2a2a2a; border-radius: 16px; padding: 12px; cursor: pointer; transition: border-color 0.2s; }
+  .metric-card:hover { border-color: #444; }
+  .metric-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #555; margin-bottom: 8px; }
+  .nutriscore-track { display: flex; gap: 3px; margin-bottom: 6px; }
+  .ns-block { flex: 1; height: 22px; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 800; opacity: 0.2; color: #fff; }
+  .ns-block.active { opacity: 1; }
+  .ns-a { background: #00843d; } .ns-b { background: #85bb2f; } .ns-c { background: #fecb02; color: #111; } .ns-d { background: #ee8100; } .ns-e { background: #e63312; }
+  .metric-note { font-size: 11px; color: #666; }
+  .metric-tap-hint { font-size: 10px; color: #444; margin-top: 5px; }
+  .nova-blocks { display: flex; gap: 3px; margin-bottom: 6px; }
+  .nova-block { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 800; opacity: 0.2; color: #fff; }
+  .nova-block.active { opacity: 1; }
+  .nova-1 { background: #2ed573; color: #111; } .nova-2 { background: #ffa502; } .nova-3 { background: #ff6b35; } .nova-4 { background: #e63312; }
+  .serving-banner { background: #1e1400; border: 1px solid #4a3a00; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; display: flex; gap: 8px; align-items: flex-start; }
+  .serving-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .serving-text { font-size: 12px; color: #e0a030; line-height: 1.5; }
+  .serving-text strong { color: #ffb830; display: block; margin-bottom: 2px; font-size: 13px; }
+  .additive-item { display: flex; align-items: flex-start; gap: 8px; padding: 9px 0; border-bottom: 1px solid #222; cursor: pointer; transition: background 0.15s; border-radius: 4px; }
+  .additive-item:last-child { border-bottom: none; }
+  .additive-item:hover { background: #1f1f1f; }
+  .severity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
+  .sev-severe { background: #ff2d55; } .sev-high { background: #ff6b35; } .sev-medium { background: #ffb830; } .sev-low { background: #8e8e93; }
+  .additive-name { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+  .additive-reason { font-size: 12px; color: #666; line-height: 1.4; }
+  .sev-badge { margin-left: auto; font-size: 10px; font-weight: 700; padding: 3px 7px; border-radius: 6px; flex-shrink: 0; }
+  .badge-severe { background: #3d0a14; color: #ff2d55; } .badge-high { background: #2e1500; color: #ff6b35; } .badge-medium { background: #2e2000; color: #ffb830; } .badge-low { background: #222; color: #8e8e93; }
+  .beneficial-item { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; border-bottom: 1px solid #1e1e1e; }
+  .beneficial-item:last-child { border-bottom: none; }
+  .beneficial-name { font-size: 13px; font-weight: 600; color: #2ed573; margin-bottom: 2px; }
+  .beneficial-reason { font-size: 12px; color: #666; line-height: 1.4; }
+  .ai-summary { background: #111820; border: 1px solid #1a2a3a; border-radius: 16px; padding: 14px; margin-bottom: 10px; }
+  .ai-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; color: #3a7bd5; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 5px; }
+  .ai-text { font-size: 13px; color: #aaa; line-height: 1.65; }
+  .regulatory-banner { background: #0d0820; border: 1px solid #2d1a5c; border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; display: flex; gap: 8px; }
+  .reg-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+  .reg-text { font-size: 12px; color: #9d7fd4; line-height: 1.5; }
+  .reg-text strong { color: #b89eea; display: block; margin-bottom: 2px; font-size: 13px; }
+  .feedback-row { display: flex; align-items: center; justify-content: center; padding: 14px; margin-top: 4px; }
+  .feedback-btn { font-size: 12px; color: #555; background: none; border: 1px solid #2a2a2a; border-radius: 20px; padding: 7px 14px; cursor: pointer; }
+  .feedback-btn:hover { color: #888; border-color: #444; }
+  .section-divider { height: 1px; background: #222; margin: 6px 0 14px; }
+
+  /* ── Modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 100; display: flex; align-items: flex-end; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.2s; }
+  .modal-overlay.open { opacity: 1; pointer-events: all; }
+  .modal-sheet { background: #181818; border-radius: 24px 24px 0 0; border: 1px solid #2a2a2a; width: 100%; max-width: 430px; padding: 20px 20px 40px; transform: translateY(100%); transition: transform 0.3s ease; max-height: 82vh; overflow-y: auto; scrollbar-width: none; }
+  .modal-sheet::-webkit-scrollbar { display: none; }
+  .modal-overlay.open .modal-sheet { transform: translateY(0); }
+  .modal-handle { width: 36px; height: 4px; background: #333; border-radius: 2px; margin: 0 auto 18px; }
+  .modal-title { font-size: 18px; font-weight: 800; color: #fff; margin-bottom: 4px; }
+  .modal-subtitle { font-size: 13px; color: #666; margin-bottom: 18px; line-height: 1.5; }
+  .modal-section { margin-bottom: 16px; }
+  .modal-section-label { font-size: 10px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #555; margin-bottom: 8px; }
+  .modal-body { font-size: 13px; color: #aaa; line-height: 1.7; }
+  .modal-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 8px; font-size: 12px; font-weight: 700; margin-bottom: 14px; }
+  .modal-source { display: flex; align-items: center; gap: 6px; padding: 10px 12px; background: #111; border-radius: 10px; margin-top: 10px; border: 1px solid #2a2a2a; }
+  .modal-source-icon { font-size: 13px; }
+  .modal-source-text { font-size: 12px; color: #3a7bd5; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .modal-source-arrow { font-size: 12px; color: #444; }
+  .modal-close { width: 100%; padding: 13px; background: #222; border: none; border-radius: 12px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 16px; }
+  .modal-close:hover { background: #2a2a2a; }
+  .nutriscore-explain { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+  .ns-explain-item { flex: 1; min-width: 52px; background: #222; border-radius: 10px; padding: 8px 6px; text-align: center; border: 1px solid #2a2a2a; }
+  .ns-explain-item.active { border-color: #555; }
+  .ns-grade { font-size: 18px; font-weight: 800; margin-bottom: 2px; }
+  .ns-desc { font-size: 9px; color: #666; line-height: 1.3; }
+  .nova-explain-list { display: flex; flex-direction: column; gap: 8px; }
+  .nova-explain-row { display: flex; gap: 10px; align-items: flex-start; padding: 10px; background: #1a1a1a; border-radius: 10px; border: 1px solid #2a2a2a; }
+  .nova-explain-row.active { border-color: #444; background: #222; }
+  .nova-num { width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; flex-shrink: 0; color: #111; }
+  .nova-explain-text { flex: 1; }
+  .nova-explain-title { font-size: 13px; font-weight: 600; color: #fff; margin-bottom: 2px; }
+  .nova-explain-desc { font-size: 11px; color: #666; line-height: 1.4; }
+  .divider { height: 1px; background: #222; margin: 14px 0; }
+</style>
+</head>
+<body>
+
+<div class="switcher">
+  <button onclick="loadProduct('nutella',this)">🍫 Nutella</button>
+  <button onclick="loadProduct('oats',this)">🌾 Rolled Oats</button>
+  <button onclick="loadProduct('dietcoke',this)">🥤 Diet Coke</button>
+  <button onclick="loadProduct('proteinbar',this)">💪 Protein Bar</button>
+  <button onclick="loadProduct('babyfood',this)">👶 Baby Food</button>
+</div>
+
+<div class="phone" id="phone">
+  <div class="statusbar"><span>9:41</span><span>●●●</span><span>⬛⬛ 100%</span></div>
+  <div class="navbar">
+    <div class="back-btn">‹</div>
+    <span class="navbar-title">Scan result</span>
+  </div>
+  <div class="scroll" id="result-content"></div>
+</div>
+
+<!-- Modal overlay -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal-sheet" id="modal-sheet">
+    <div class="modal-handle"></div>
+    <div id="modal-body-content"></div>
+    <button class="modal-close" onclick="closeModal()">Done</button>
+  </div>
+</div>
+
+<script>
+// ─── Data ─────────────────────────────────────────────────────────────────────
+const products = {
+  nutella: {
+    emoji: '🍫', brand: 'Ferrero', name: 'Nutella Hazelnut Spread', barcode: '3017624010701',
+    headline: '56% sugar — that\'s 14 teaspoons per serving.',
+    subline: 'Mostly sugar and palm oil. Hazelnuts are the fifth ingredient.',
+    safety: {
+      allergenConflicts: ['milk', 'soy', 'hazelnuts'],
+      avoidList: [],
+      cautionList: [
+        { ingredient: 'Contains palm oil', reason: 'Linked to deforestation; classified as a Group 4 processed ingredient.' },
+        { ingredient: 'Soy lecithin present', reason: 'Emulsifier — low concern for most people, but worth noting if sensitive.' },
+      ],
+      beneficialList: [],
+    },
+    nova: 4, nutriscore: 'e',
+    servingSizeFlag: { declared: '15g (1 tablespoon)', realWorld: 'Most people spread 2–3 tablespoons', sugarsPerDeclared: '8.5g', sugarsIfReal: '25g+' },
+    additives: [
+      { name: 'Sugar', severity: 'high', reason: 'Primary ingredient at 56%. Linked to metabolic disease at high intake.', source: 'https://www.who.int/news-room/fact-sheets/detail/sugars-and-dental-caries', sourceLabel: 'WHO — Sugars and health' },
+      { name: 'Palm Oil', severity: 'high', reason: 'Saturated fat — 50% of calories. Associated with cardiovascular risk.', source: 'https://www.hsph.harvard.edu/nutritionsource/2015/04/13/ask-the-expert-concerns-about-canola-and-other-neutral-oils/', sourceLabel: 'Harvard T.H. Chan School of Public Health' },
+      { name: 'Vanillin (artificial)', severity: 'medium', reason: 'Synthetic vanilla flavoring. No health risk at typical doses; flavor substitute for natural vanilla.', source: null },
+      { name: 'Soy Lecithin', severity: 'low', reason: 'Emulsifier derived from soybeans. Generally recognized as safe by FDA.', source: 'https://www.accessdata.fda.gov/scripts/cdrh/cfdocs/cfcfr/CFRSearch.cfm?fr=184.1400', sourceLabel: 'FDA GRAS — Soy Lecithin' },
+    ],
+    beneficial: [],
+    aiSummary: 'Nutella markets itself around hazelnuts, but sugar and palm oil make up the majority of the product by weight. At the label\'s declared serving size, one portion has 8.5g of sugar — but realistic use easily triples that. For daily use, there are significantly lower-sugar alternatives.',
+    regulatory: null,
+  },
+  oats: {
+    emoji: '🌾', brand: 'Bob\'s Red Mill', name: 'Whole Grain Rolled Oats', barcode: '039978004055',
+    headline: 'Only 1 ingredient. No additives. No processing.',
+    subline: 'Whole grain oats. Nothing added, nothing removed.',
+    safety: { allergenConflicts: [], avoidList: [], cautionList: [], beneficialList: [
+      { ingredient: 'Beta-glucan fiber', reason: 'Clinically shown to reduce LDL cholesterol. FDA-approved heart health claim.' },
+      { ingredient: 'Whole grain oats', reason: 'High satiety index. Associated with reduced cardiovascular risk in long-term studies.' },
+      { ingredient: 'Manganese', reason: 'Significant source (191% DV per serving). Supports bone health and metabolism.' },
+    ]},
+    nova: 1, nutriscore: 'a', servingSizeFlag: null,
+    additives: [],
+    beneficial: [
+      { name: 'Beta-glucan fiber', reason: 'Clinically shown to reduce LDL cholesterol. FDA-approved heart health claim.', source: 'https://www.fda.gov/food/cfsan-constituent-updates/fda-allows-qualified-health-claim-linking-consumption-oats-reduced-risk-heart-disease', sourceLabel: 'FDA — Oat beta-glucan health claim' },
+      { name: 'Whole grain oats', reason: 'High satiety index. Associated with reduced cardiovascular risk in long-term studies.', source: 'https://pubmed.ncbi.nlm.nih.gov/25599007/', sourceLabel: 'PubMed — Whole grain and CVD risk' },
+      { name: 'Manganese', reason: 'Significant source (191% DV per serving). Supports bone health and metabolism.', source: 'https://ods.od.nih.gov/factsheets/Manganese-HealthProfessional/', sourceLabel: 'NIH ODS — Manganese' },
+    ],
+    aiSummary: 'Rolled oats are about as close to an unprocessed food as you\'ll find in a grocery store. The fiber content is genuinely high, the ingredient list is one word, and the Nutri-Score A is deserved. If you\'re eating oats, you\'re making a straightforwardly good choice.',
+    regulatory: null,
+  },
+  dietcoke: {
+    emoji: '🥤', brand: 'Coca-Cola', name: 'Diet Coke', barcode: '5000112546415',
+    headline: 'Zero sugar — but the tradeoffs are real.',
+    subline: 'Aspartame and caramel color are worth understanding before making this a daily habit.',
+    safety: { allergenConflicts: [], avoidList: [], cautionList: [
+      { ingredient: 'Aspartame', reason: 'Classified as "possibly carcinogenic" by IARC (2023) at high doses. Safe at typical consumption per FDA.' },
+      { ingredient: 'Caramel Color (Class IV)', reason: 'Contains 4-MEI, a byproduct linked to cancer in animal studies. California Prop 65 listed.' },
+    ], beneficialList: [] },
+    nova: 4, nutriscore: 'b', servingSizeFlag: null,
+    additives: [
+      { name: 'Aspartame', severity: 'medium', reason: 'IARC Group 2B — "possibly carcinogenic to humans." Safe within ADI limits per FDA/EFSA.', source: 'https://www.iarc.who.int/news-events/iarc-monographs-evaluate-the-carcinogenicity-of-aspartame/', sourceLabel: 'IARC — Aspartame classification (2023)' },
+      { name: 'Caramel Color (E150d)', severity: 'medium', reason: '4-MEI byproduct. California Prop 65 listed above 29μg/day.', source: 'https://oehha.ca.gov/proposition-65/chemicals/4-methylimidazole', sourceLabel: 'OEHHA — Prop 65, 4-MEI' },
+      { name: 'Phosphoric Acid', severity: 'low', reason: 'May affect calcium absorption and bone density with very high consumption.', source: 'https://pubmed.ncbi.nlm.nih.gov/16895876/', sourceLabel: 'PubMed — Cola and bone density' },
+      { name: 'Citric Acid', severity: 'low', reason: 'Dental enamel erosion at high frequency. Low concern otherwise.', source: null },
+    ],
+    beneficial: [],
+    aiSummary: 'Diet Coke scores Nutri-B, which reflects the zero-sugar profile — but NOVA 4 is the fuller picture. The aspartame debate is genuinely unresolved: safe at typical doses per regulators, but long-term daily consumption hasn\'t been conclusively studied. The tradeoff over regular Coke is sugar; what you take on instead is a different set of open questions.',
+    regulatory: { substance: 'Aspartame', note: 'IARC classified aspartame as Group 2B (possibly carcinogenic) in July 2023. This is a hazard classification, not a risk assessment. FDA and EFSA maintain it is safe within ADI limits (40–50mg/kg body weight/day).' },
+  },
+  proteinbar: {
+    emoji: '💪', brand: 'Quest Nutrition', name: 'Quest Protein Bar (Chocolate Chip)', barcode: '888849000075',
+    headline: '21g protein — but read past the front panel.',
+    subline: 'High protein, but also NOVA 4 ultra-processed with 4 additives worth noting.',
+    safety: { allergenConflicts: ['milk', 'soy'], avoidList: [], cautionList: [
+      { ingredient: 'Multiple sweeteners', reason: 'Erythritol + sucralose combination. Some research links erythritol to cardiovascular events at high intake.' },
+    ], beneficialList: [
+      { ingredient: 'Milk Protein Isolate', reason: '21g complete protein per bar. High leucine content supports muscle protein synthesis.' },
+      { ingredient: 'Soluble Corn Fiber', reason: 'Prebiotic fiber. Supports gut health at these doses.' },
+    ]},
+    nova: 4, nutriscore: 'b', servingSizeFlag: null,
+    additives: [
+      { name: 'Erythritol', severity: 'medium', reason: 'Sugar alcohol. 2023 study linked high plasma levels to cardiovascular events; causality debated.', source: 'https://www.nature.com/articles/s41591-023-02223-9', sourceLabel: 'Nature Medicine — Erythritol and CVD (2023)' },
+      { name: 'Sucralose', severity: 'medium', reason: 'May alter gut microbiome composition. FDA GRAS status, but emerging research raises questions.', source: 'https://pubmed.ncbi.nlm.nih.gov/37038141/', sourceLabel: 'Cell — Sucralose and immune response (2023)' },
+      { name: 'Sunflower Lecithin', severity: 'low', reason: 'Emulsifier. Generally well tolerated.', source: null },
+      { name: 'Natural Flavors', severity: 'low', reason: 'Opaque ingredient category. No known harm but sourcing and composition are undisclosed.', source: null },
+    ],
+    beneficial: [
+      { name: 'Milk Protein Isolate', reason: '21g complete protein per bar. High leucine content supports muscle protein synthesis.', source: 'https://pubmed.ncbi.nlm.nih.gov/22958314/', sourceLabel: 'PubMed — Leucine and muscle protein synthesis' },
+      { name: 'Soluble Corn Fiber', reason: 'Prebiotic fiber. Supports gut health at these doses.', source: 'https://pubmed.ncbi.nlm.nih.gov/28854690/', sourceLabel: 'PubMed — Soluble corn fiber and gut microbiota' },
+    ],
+    aiSummary: 'Quest bars occupy a genuinely ambiguous space: the protein is real and useful, the fiber content is legitimate, but the processing level is maximal and the sweetener combination warrants caution for daily use. As an occasional post-workout option, the tradeoffs are reasonable. As a daily snack replacement, the additive load accumulates.',
+    regulatory: null,
+  },
+  babyfood: {
+    emoji: '👶', brand: 'Gerber', name: 'Gerber Organic Sweet Potato Puree', barcode: '015000043352',
+    headline: 'Single ingredient. Organic. Clean.',
+    subline: 'Nothing alarming found. A genuinely good choice for stage 1.',
+    safety: { allergenConflicts: [], avoidList: [], cautionList: [], beneficialList: [
+      { ingredient: 'Sweet Potato', reason: 'High in beta-carotene (Vitamin A precursor). Important for infant eye development.' },
+      { ingredient: 'Organic certification', reason: 'No synthetic pesticides. Pesticide exposure thresholds are stricter for infants.' },
+    ]},
+    nova: 1, nutriscore: null, servingSizeFlag: null,
+    additives: [],
+    beneficial: [
+      { name: 'Sweet Potato', reason: 'High in beta-carotene (Vitamin A precursor). Important for infant eye development.', source: 'https://ods.od.nih.gov/factsheets/VitaminA-HealthProfessional/', sourceLabel: 'NIH ODS — Vitamin A' },
+      { name: 'Organic certification', reason: 'No synthetic pesticides. Pesticide exposure thresholds for infants are lower than adults.', source: 'https://www.ewg.org/foodnews/', sourceLabel: 'EWG — Pesticides and children' },
+    ],
+    aiSummary: 'Organic sweet potato puree is a clean, appropriate stage 1 food. Single ingredient, NOVA 1, no additives. Nutri-Score isn\'t calculated for baby foods — different nutritional reference values apply for infants. The organic certification is meaningful here: pesticide exposure limits for infants are stricter than adult thresholds.',
+    regulatory: null,
+  },
+};
+
+// ─── Verdict derivation — NO HARDCODING ───────────────────────────────────────
+// Mirrors the logic that will live in ScanResultScreen.tsx
+function deriveVerdict(p) {
+  const { safety, additives, nova, nutriscore } = p;
+  // 1. Allergen conflicts → always Avoid
+  if (safety.allergenConflicts.length > 0) return 'avoid';
+  // 2. Personalized conflicts or high-severity additives → Check
+  if (safety.avoidList.length > 0) return 'check';
+  if (safety.cautionList.length > 0) return 'check';
+  if (additives.some(a => a.severity === 'severe' || a.severity === 'high')) return 'check';
+  // 3. Positive signals → Good
+  const hasPositive =
+    safety.beneficialList.length > 0 ||
+    nova === 1 ||
+    (nutriscore !== null && ['a', 'b'].includes(nutriscore));
+  if (hasPositive) return 'good';
+  // 4. Nothing notable either way → Acceptable
+  return 'acceptable';
+}
+
+const verdictLabels = { avoid: 'Avoid', check: 'Check', acceptable: 'Acceptable', good: 'Good' };
+const verdictSubtitles = {
+  avoid: 'Conflicts with your profile',
+  check: 'Some ingredients to know about',
+  acceptable: 'Nothing alarming found',
+  good: 'A genuinely good choice',
+};
+
+// ─── Nutri-Score / NOVA modal content ─────────────────────────────────────────
+const nutriscoreInfo = {
+  a: { color: '#00843d', desc: 'Excellent nutritional quality' },
+  b: { color: '#85bb2f', desc: 'Good nutritional quality' },
+  c: { color: '#fecb02', desc: 'Average nutritional quality' },
+  d: { color: '#ee8100', desc: 'Poor nutritional quality' },
+  e: { color: '#e63312', desc: 'Very poor nutritional quality' },
+};
+const novaInfo = {
+  1: { color: '#2ed573', title: 'Unprocessed or minimally processed', desc: 'Natural foods with no or minimal industrial processing. Fruits, vegetables, eggs, meat, milk, legumes, plain grains.' },
+  2: { color: '#ffa502', title: 'Processed culinary ingredients', desc: 'Substances extracted from foods or nature: oils, butter, sugar, salt, flour. Used in cooking, not eaten alone.' },
+  3: { color: '#ff6b35', title: 'Processed foods', desc: 'Products made by adding salt, sugar or other substances to Group 1 foods. Canned fish, cheese, cured meats, freshly baked bread.' },
+  4: { color: '#e63312', title: 'Ultra-processed foods', desc: 'Industrial formulations with 5+ ingredients, many not found in a typical kitchen: additives, colorings, flavor enhancers, emulsifiers. Associated with higher risk of obesity, diabetes, and cardiovascular disease in large cohort studies.' },
+};
+
+// ─── Modal ─────────────────────────────────────────────────────────────────────
+function openModal(html) {
+  document.getElementById('modal-body-content').innerHTML = html;
+  document.getElementById('modal-overlay').classList.add('open');
+}
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+function showAdditiveModal(key, idx) {
+  const p = products[key];
+  const a = p.additives[idx];
+  const colors = { severe: '#ff2d55', high: '#ff6b35', medium: '#ffb830', low: '#8e8e93' };
+  const bgColors = { severe: '#3d0a14', high: '#2e1500', medium: '#2e2000', low: '#222' };
+  openModal(`
+    <div class="modal-badge" style="background:${bgColors[a.severity]};color:${colors[a.severity]}">
+      <span style="width:8px;height:8px;border-radius:50%;background:${colors[a.severity]};display:inline-block;"></span>
+      ${a.severity.toUpperCase()} CONCERN
+    </div>
+    <div class="modal-title">${a.name}</div>
+    <div class="divider"></div>
+    <div class="modal-section">
+      <div class="modal-section-label">What it is</div>
+      <div class="modal-body">${a.reason}</div>
+    </div>
+    ${a.source ? `
+    <div class="modal-section">
+      <div class="modal-section-label">Source</div>
+      <div class="modal-source">
+        <span class="modal-source-icon">🔗</span>
+        <span class="modal-source-text">${a.sourceLabel || a.source}</span>
+        <span class="modal-source-arrow">›</span>
+      </div>
+    </div>` : ''}
+    <div class="modal-section" style="background:#1a1a1a;border-radius:12px;padding:12px;border:1px solid #2a2a2a;">
+      <div class="modal-section-label" style="margin-bottom:6px;">Context</div>
+      <div class="modal-body" style="font-size:12px;">
+        ${a.severity === 'severe' ? 'This ingredient has strong evidence of harm. Avoiding it is recommended regardless of quantity.' :
+          a.severity === 'high' ? 'This ingredient has significant concerns backed by multiple studies. Worth limiting in your regular diet.' :
+          a.severity === 'medium' ? 'Evidence is emerging or mixed. Safe at typical doses for most people, but worth being aware of at high intake.' :
+          'Low concern at typical dietary exposure. Listed for transparency.'}
+      </div>
+    </div>
+  `);
+}
+
+function showBeneficialModal(key, idx) {
+  const p = products[key];
+  const b = p.beneficial[idx];
+  openModal(`
+    <div class="modal-badge" style="background:#0a1f12;color:#2ed573;border:1px solid #1a5c30;">
+      ✦ BENEFICIAL
+    </div>
+    <div class="modal-title">${b.name}</div>
+    <div class="divider"></div>
+    <div class="modal-section">
+      <div class="modal-section-label">Why it matters</div>
+      <div class="modal-body">${b.reason}</div>
+    </div>
+    ${b.source ? `
+    <div class="modal-section">
+      <div class="modal-section-label">Source</div>
+      <div class="modal-source">
+        <span class="modal-source-icon">🔗</span>
+        <span class="modal-source-text">${b.sourceLabel || b.source}</span>
+        <span class="modal-source-arrow">›</span>
+      </div>
+    </div>` : ''}
+  `);
+}
+
+function showNutriscoreModal(grade) {
+  const grades = ['a','b','c','d','e'];
+  openModal(`
+    <div class="modal-title">Nutri-Score</div>
+    <div class="modal-subtitle">A front-of-pack nutrition label developed by French public health authorities. Grades A–E based on positive nutrients (fiber, protein, fruits/veg) vs. negative (calories, saturated fat, sugar, salt).</div>
+    <div class="nutriscore-explain">
+      ${grades.map(g => `
+        <div class="ns-explain-item ${g === grade ? 'active' : ''}">
+          <div class="ns-grade" style="color:${nutriscoreInfo[g].color}">${g.toUpperCase()}</div>
+          <div class="ns-desc">${nutriscoreInfo[g].desc}</div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="modal-section">
+      <div class="modal-section-label">This product</div>
+      <div class="modal-body">Scored <strong style="color:${nutriscoreInfo[grade].color}">${grade.toUpperCase()}</strong> — ${nutriscoreInfo[grade].desc.toLowerCase()}. The Nutri-Score algorithm weighs positive and negative nutritional factors per 100g.</div>
+    </div>
+    <div class="modal-source" style="margin-top:10px;">
+      <span class="modal-source-icon">🔗</span>
+      <span class="modal-source-text">Official Nutri-Score methodology — santepubliquefrance.fr</span>
+      <span class="modal-source-arrow">›</span>
+    </div>
+  `);
+}
+
+function showNovaModal(group) {
+  openModal(`
+    <div class="modal-title">NOVA Processing Groups</div>
+    <div class="modal-subtitle">Developed by researchers at the University of São Paulo, NOVA classifies foods by the extent and purpose of industrial processing — not by nutrient content.</div>
+    <div class="nova-explain-list">
+      ${[1,2,3,4].map(n => `
+        <div class="nova-explain-row ${n === group ? 'active' : ''}">
+          <div class="nova-num" style="background:${novaInfo[n].color}">${n}</div>
+          <div class="nova-explain-text">
+            <div class="nova-explain-title">${novaInfo[n].title}</div>
+            <div class="nova-explain-desc">${novaInfo[n].desc}</div>
+          </div>
+        </div>
+      `).join('')}
+    </div>
+    <div class="modal-source" style="margin-top:14px;">
+      <span class="modal-source-icon">🔗</span>
+      <span class="modal-source-text">Monteiro et al. — NOVA classification (Public Health Nutrition)</span>
+      <span class="modal-source-arrow">›</span>
+    </div>
+  `);
+}
+
+// ─── Render helpers ────────────────────────────────────────────────────────────
+function renderSafety(p, verdict) {
+  const { safety } = p;
+  if (verdict === 'good' && !safety.allergenConflicts.length && !safety.cautionList.length) {
+    return `<div class="card green-border" style="margin-bottom:10px;">
+      <div class="card-label">Safety verdict</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:18px;">✓</span>
+        <div>
+          <div style="font-size:14px;font-weight:600;color:#2ed573;">No conflicts found</div>
+          <div style="font-size:12px;color:#666;margin-top:2px;">No allergens or flagged ingredients detected.</div>
+        </div>
+      </div>
+    </div>`;
+  }
+  let html = `<div class="card ${safety.allergenConflicts.length ? 'red-border' : 'yellow-border'}" style="margin-bottom:10px;">
+    <div class="card-label">Safety verdict</div>`;
+  if (safety.allergenConflicts.length) {
+    html += `<div class="safety-row" style="margin-bottom:10px;">
+      <span class="safety-icon">🚨</span>
+      <div>
+        <div class="safety-title" style="color:#ff4d4d;">Allergen detected</div>
+        <div class="safety-desc">Contains: ${safety.allergenConflicts.map(a=>`<span style="color:#ff6b6b;font-weight:600;">${a}</span>`).join(', ')}</div>
+      </div>
+    </div>`;
+  }
+  const visible = safety.cautionList.slice(0, 2);
+  const hidden = safety.cautionList.slice(2);
+  visible.forEach(s => {
+    html += `<div class="safety-row"><span class="safety-icon">⚠️</span><div><div class="safety-title">${s.ingredient}</div><div class="safety-desc">${s.reason}</div></div></div>`;
+  });
+  if (hidden.length) {
+    html += `<div class="hidden-items" id="safety-hidden">`;
+    hidden.forEach(s => {
+      html += `<div class="safety-row"><span class="safety-icon">⚠️</span><div><div class="safety-title">${s.ingredient}</div><div class="safety-desc">${s.reason}</div></div></div>`;
+    });
+    html += `</div>
+    <div class="expand-btn" onclick="toggleExpand()"><span id="expand-arrow">▼</span> <span id="expand-label">See ${hidden.length} more</span></div>`;
+  }
+  html += `</div>`;
+  return html;
+}
+
+function toggleExpand() {
+  const el = document.getElementById('safety-hidden');
+  const arrow = document.getElementById('expand-arrow');
+  const label = document.getElementById('expand-label');
+  const isOpen = el.classList.toggle('open');
+  arrow.textContent = isOpen ? '▲' : '▼';
+  label.textContent = isOpen ? 'Show less' : `See more`;
+}
+
+function renderNutriNova(p) {
+  const grades = ['a','b','c','d','e'];
+  const nutriHtml = p.nutriscore ? `
+    <div class="metric-card" onclick="showNutriscoreModal('${p.nutriscore}')">
+      <div class="metric-label">Nutri-Score</div>
+      <div class="nutriscore-track">${grades.map(g=>`<div class="ns-block ns-${g} ${p.nutriscore===g?'active':''}">${g.toUpperCase()}</div>`).join('')}</div>
+      <div class="metric-note">${nutriscoreInfo[p.nutriscore].desc}</div>
+      <div class="metric-tap-hint">Tap to learn more ›</div>
+    </div>` :
+    `<div class="metric-card"><div class="metric-label">Nutri-Score</div><div style="font-size:12px;color:#555;margin-top:4px;">Not applicable<br/>for this category</div></div>`;
+  const novaHtml = `
+    <div class="metric-card" onclick="showNovaModal(${p.nova})">
+      <div class="metric-label">Processing (NOVA)</div>
+      <div class="nova-blocks">${[1,2,3,4].map(n=>`<div class="nova-block nova-${n} ${p.nova===n?'active':''}">${n}</div>`).join('')}</div>
+      <div class="metric-note">${novaInfo[p.nova].title}</div>
+      <div class="metric-tap-hint">Tap to learn more ›</div>
+    </div>`;
+  return `<div class="metrics-row">${nutriHtml}${novaHtml}</div>`;
+}
+
+function renderAdditives(p) {
+  if (!p.additives.length) return `<div style="font-size:13px;color:#555;padding:6px 0;">No concerning additives detected.</div>`;
+  return p.additives.map((a,i) => `
+    <div class="additive-item" onclick="showAdditiveModal('${p.key}',${i})">
+      <div class="severity-dot sev-${a.severity}"></div>
+      <div style="flex:1">
+        <div class="additive-name">${a.name}</div>
+        <div class="additive-reason">${a.reason}</div>
+      </div>
+      <div class="sev-badge badge-${a.severity}">${a.severity.toUpperCase()}</div>
+    </div>`).join('');
+}
+
+function renderBeneficial(p) {
+  if (!p.beneficial.length) return '';
+  return `<div class="card green-border">
+    <div class="card-label">✓ Beneficial ingredients</div>
+    ${p.beneficial.map((b,i)=>`
+      <div class="beneficial-item" onclick="showBeneficialModal('${p.key}',${i})" style="cursor:pointer;">
+        <div style="font-size:15px;flex-shrink:0;margin-top:2px;color:#2ed573;">✦</div>
+        <div style="flex:1">
+          <div class="beneficial-name">${b.name}</div>
+          <div class="beneficial-reason">${b.reason}</div>
+        </div>
+        <div style="font-size:13px;color:#444;flex-shrink:0;margin-top:2px;">›</div>
+      </div>`).join('')}
+  </div>`;
+}
+
+// ─── Main load ─────────────────────────────────────────────────────────────────
+function loadProduct(key, btn) {
+  if (btn) {
+    document.querySelectorAll('.switcher button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+  const p = { ...products[key], key };
+  const verdict = deriveVerdict(p);
+  const html = `
+    <div class="product-header">
+      <div class="product-image">${p.emoji}</div>
+      <div class="product-meta">
+        <div class="product-brand">${p.brand}</div>
+        <div class="product-name">${p.name}</div>
+        <div class="product-barcode">${p.barcode}</div>
+      </div>
+    </div>
+    <div class="verdict-block">
+      <div class="verdict-pill ${verdict}"><div class="verdict-dot"></div>${verdictLabels[verdict]}</div>
+      <div style="font-size:12px;color:#666;margin-bottom:8px;">${verdictSubtitles[verdict]}</div>
+      <div class="verdict-headline">${p.headline}</div>
+      <div class="verdict-subline">${p.subline}</div>
+    </div>
+    <div class="section-divider"></div>
+    ${renderSafety(p, verdict)}
+    ${renderNutriNova(p)}
+    ${p.servingSizeFlag ? `<div class="serving-banner"><span class="serving-icon">📏</span><div class="serving-text"><strong>Serving size may mislead</strong>Label declares ${p.servingSizeFlag.declared}. Typical use: ${p.servingSizeFlag.realWorld} — that's ${p.servingSizeFlag.sugarsIfReal} sugar.</div></div>` : ''}
+    <div class="ai-summary"><div class="ai-label">⚡ Aware's take</div><div class="ai-text">${p.aiSummary}</div></div>
+    ${p.regulatory ? `<div class="regulatory-banner"><span class="reg-icon">🌍</span><div class="reg-text"><strong>International regulatory note — ${p.regulatory.substance}</strong>${p.regulatory.note}</div></div>` : ''}
+    <div class="card ${p.additives.some(a=>a.severity==='severe'||a.severity==='high')?'red-border':p.additives.some(a=>a.severity==='medium')?'yellow-border':''}">
+      <div class="card-label">${p.additives.length ? `⚠ Additives & ingredients (${p.additives.length}) — tap any to learn more` : '✓ Additives'}</div>
+      ${renderAdditives(p)}
+    </div>
+    ${renderBeneficial(p)}
+    <div class="feedback-row"><button class="feedback-btn">Something wrong? Let us know →</button></div>
+  `;
+  document.getElementById('result-content').innerHTML = html;
+  document.querySelector('.scroll').scrollTop = 0;
+}
+
+// Init — activate first button and load Nutella
+document.querySelector('.switcher button').classList.add('active');
+loadProduct('nutella');
+</script>
+</body>
+</html>

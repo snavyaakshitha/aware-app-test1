@@ -24,7 +24,6 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { Colors, Font, s, Radius, scoreColor, scoreLabel, scoreBgColor } from '../../../shared/theme';
 import { fetchProductByBarcode, resolveTextToBarcode } from '../../../shared/productCatalog';
-import { scoreProductForProfile } from '../../../shared/openFoodFacts';
 import { extractProductCode } from '../../../shared/scanResolve';
 import { fetchUserPreferences, getCurrentUser } from '../../../shared/supabase';
 import type { ScannerStackParamList, UserPreferences } from '../../../shared/types';
@@ -33,7 +32,7 @@ type Props = NativeStackScreenProps<ScannerStackParamList, 'Scanner'>;
 
 type ScanState = 'idle' | 'scanning' | 'found' | 'not_found';
 
-type RecentItem = { barcode: string; name: string; score: number };
+type RecentItem = { barcode: string; name: string };
 
 // ─── Scan zone dimensions ─────────────────────────────────────────────────────
 const ZONE_W = s(310);
@@ -64,8 +63,6 @@ export default function ScannerScreen({ navigation }: Props) {
     name: string;
     brand: string;
     barcode: string;
-    healthScore: number;
-    concerns: number;
   } | null>(null);
 
   useFocusEffect(
@@ -144,18 +141,15 @@ export default function ScannerScreen({ navigation }: Props) {
         return;
       }
 
-      const fit = scoreProductForProfile(res.product, prefs);
       pausedRef.current = true;
       setScanState('found');
       setPreviewProduct({
         name: res.product.productName,
         brand: res.product.brand,
         barcode: lookupCode,
-        healthScore: fit.healthScore,
-        concerns: fit.concerns.length + fit.allergensHit.length,
       });
       setRecent((prev) => [
-        { barcode: lookupCode, name: res.product.productName, score: fit.healthScore },
+        { barcode: lookupCode, name: res.product.productName },
         ...prev.filter((x) => x.barcode !== lookupCode),
       ].slice(0, 5));
 
@@ -415,9 +409,7 @@ export default function ScannerScreen({ navigation }: Props) {
                     onPress={() => navigation.navigate('ScanResult', { barcode: item.barcode })}
                     style={styles.recentCard}
                   >
-                    <Text style={[styles.recentScore, { color: scoreColor(item.score) }]}>
-                      {item.score}
-                    </Text>
+                    <Feather name="package" size={s(18)} color={Colors.accent} />
                     <Text style={styles.recentName} numberOfLines={2}>{item.name}</Text>
                   </Pressable>
                 )}
@@ -435,33 +427,16 @@ export default function ScannerScreen({ navigation }: Props) {
           <View style={styles.sheetHandle} />
           <View style={[styles.sheetContent, { paddingBottom: insets.bottom + s(16) }]}>
             <View style={styles.sheetProductRow}>
-              <View style={[styles.sheetEmoji, { backgroundColor: scoreBgColor(previewProduct.healthScore) }]}>
+              <View style={styles.sheetEmoji}>
                 <Text style={{ fontSize: s(28) }}>📦</Text>
               </View>
               <View style={styles.sheetProductInfo}>
                 <Text style={styles.sheetProductName} numberOfLines={2}>{previewProduct.name}</Text>
                 <Text style={styles.sheetBrand}>{previewProduct.brand}</Text>
-                {previewProduct.concerns === 0 ? (
-                  <View style={styles.sheetFitBadge}>
-                    <Feather name="check-circle" size={s(13)} color={Colors.scoreClean} />
-                    <Text style={styles.sheetFitText}>Looks OK for your profile</Text>
-                  </View>
-                ) : (
-                  <View style={[styles.sheetFitBadge, { backgroundColor: 'rgba(245,158,11,0.12)' }]}>
-                    <Feather name="alert-circle" size={s(13)} color={Colors.scoreCaution} />
-                    <Text style={[styles.sheetFitText, { color: Colors.scoreCaution }]}>
-                      {previewProduct.concerns} flag{previewProduct.concerns > 1 ? 's' : ''} — see details
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <View style={[styles.sheetScore, { borderColor: scoreColor(previewProduct.healthScore) }]}>
-                <Text style={[styles.sheetScoreNum, { color: scoreColor(previewProduct.healthScore) }]}>
-                  {previewProduct.healthScore}
-                </Text>
-                <Text style={[styles.sheetScoreLabel, { color: scoreColor(previewProduct.healthScore) }]}>
-                  {scoreLabel(previewProduct.healthScore)}
-                </Text>
+                <View style={styles.sheetFitBadge}>
+                  <Feather name="search" size={s(13)} color={Colors.accent} />
+                  <Text style={[styles.sheetFitText, { color: Colors.accent }]}>Tap to see full analysis</Text>
+                </View>
               </View>
             </View>
             <Pressable onPress={handleViewDetails} style={styles.sheetViewBtn}>

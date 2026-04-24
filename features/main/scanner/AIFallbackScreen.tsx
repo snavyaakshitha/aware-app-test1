@@ -262,13 +262,34 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
 
   // ── Error state ───────────────────────────────────────────────────────────
   if (phase === 'error') {
+    const isNetworkError = errorMsg.toLowerCase().includes('network') || errorMsg.toLowerCase().includes('unavailable');
+    const isImageError = errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('photo');
+    const isTimeout = errorMsg.toLowerCase().includes('too long');
+
+    let emoji = '😕';
+    let suggestion = 'Try retaking the photos with better lighting and clearer text.';
+
+    if (isImageError) {
+      emoji = '📸';
+      suggestion = 'Make sure the text on both labels is clearly visible with good lighting and no glare.';
+    } else if (isTimeout) {
+      emoji = '⏱️';
+      suggestion = 'This can happen with large images. Try taking smaller, zoomed-in photos of the key information.';
+    } else if (isNetworkError) {
+      emoji = '📡';
+      suggestion = 'Check your internet connection and try again.';
+    }
+
     return (
       <View style={styles.root}>
         {header}
         <View style={styles.centeredFlex}>
-          <Text style={{ fontSize: s(52), marginBottom: s(16) }}>😕</Text>
+          <Text style={{ fontSize: s(52), marginBottom: s(16) }}>{emoji}</Text>
           <Text style={styles.errorTitle}>AI analysis failed</Text>
           <Text style={styles.errorMessage}>{errorMsg}</Text>
+          <View style={styles.suggestionBox}>
+            <Text style={styles.suggestionText}>💡 {suggestion}</Text>
+          </View>
           <Pressable
             style={styles.retryBtn}
             onPress={() => { setErrorMsg(''); setPhase('capture'); }}
@@ -668,6 +689,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: s(20),
     marginBottom: s(16),
+  },
+  suggestionBox: {
+    backgroundColor: 'rgba(139,197,61,0.08)',
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(139,197,61,0.25)',
+    padding: s(12),
+    marginBottom: s(16),
+  },
+  suggestionText: {
+    fontFamily: Font.regular,
+    fontSize: s(13),
+    color: Colors.textMuted,
+    lineHeight: s(18),
+    textAlign: 'center',
   },
   retryBtn: {
     height: s(48),
