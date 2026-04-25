@@ -254,21 +254,24 @@ export async function callAnalyzeProduct(
 
     clearTimeout(timeout);
 
-    // Parse error details
-    let errorMsg = `HTTP ${res.status}`;
+    // ⚠️ Read the response body only ONCE
+    let responseBody: any;
     try {
-      const errBody = (await res.json()) as { error?: string; detail?: string; message?: string };
-      if (errBody.error) errorMsg = errBody.error;
-      if (errBody.detail) errorMsg = `${errorMsg} (${errBody.detail})`;
-
-      // Log for debugging
-      console.warn(`[callAnalyzeProduct] ${res.status}: ${errorMsg}`);
-    } catch {
-      console.warn(`[callAnalyzeProduct] ${res.status}: Could not parse error`);
+      responseBody = await res.json();
+    } catch (parseErr) {
+      // If JSON parsing fails, read as text for error messages
+      const text = await res.text().catch(() => '');
+      throw new Error(`HTTP ${res.status}: Unable to parse response. ${text.slice(0, 200)}`);
     }
 
+    // Now handle both success and error using the already parsed body
     if (!res.ok) {
-      // Distinguish between provider failures and infrastructure issues
+      let errorMsg = `HTTP ${res.status}`;
+      if (responseBody?.error) errorMsg = responseBody.error;
+      if (responseBody?.detail) errorMsg = `${errorMsg} (${responseBody.detail})`;
+
+      console.warn(`[callAnalyzeProduct] ${res.status}: ${errorMsg}`);
+
       if (res.status === 502 || res.status === 503 || res.status === 504) {
         throw new Error(
           'AI analysis service is temporarily unavailable. Please try again in a moment, or use a regular scan.',
@@ -283,7 +286,8 @@ export async function callAnalyzeProduct(
       throw new Error(errorMsg);
     }
 
-    const result = (await res.json()) as AIProductResult;
+    // Success path — cast the already parsed body
+    const result = responseBody as AIProductResult;
 
     // Validate result structure
     if (!result.product_name && !result.brand && (!result.ingredients || result.ingredients.length === 0)) {
