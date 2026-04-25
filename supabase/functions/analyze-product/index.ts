@@ -354,6 +354,7 @@ Deno.serve(async (req: Request) => {
       ingredients: result.ingredients ?? [],
       nutrition_facts: result.nutrition_facts ?? {},
       source: result.model_used,
+      category: result.category ?? null,
       image_front_url: frontUrl,
       image_label_url: labelUrl,
       updated_at: new Date().toISOString(),

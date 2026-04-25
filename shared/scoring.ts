@@ -10,6 +10,7 @@
  */
 
 import { supabase } from './supabase';
+import type { SkinCareAnalysisResult } from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,58 @@ export async function fetchProductAnalysis(
   }
 
   return { safety, additives, bannedSubstances };
+}
+
+// ─── Skincare Analysis ────────────────────────────────────────────────────────
+
+export async function fetchSkinCareAnalysis(
+  ingredientsText: string,
+  userId: string | null,
+): Promise<SkinCareAnalysisResult | null> {
+  if (!supabase) return null;
+
+  const ingredients = parseIngredientsArray(ingredientsText);
+  if (!ingredients.length) return null;
+
+  let skinType: string | null = null;
+  let skinConcerns: string[] = [];
+  let knownSensitivities: string[] = [];
+
+  if (userId) {
+    try {
+      const { data } = await supabase
+        .from('user_profiles')
+        .select('skin_type, skin_concerns, known_skin_sensitivities')
+        .eq('id', userId)
+        .single();
+      if (data) {
+        skinType = data.skin_type ?? null;
+        skinConcerns = data.skin_concerns ?? [];
+        knownSensitivities = data.known_skin_sensitivities ?? [];
+      }
+    } catch {
+      // Proceed without personalization
+    }
+  }
+
+  try {
+    const { data, error } = await supabase.rpc('compute_skincare_score', {
+      p_ingredients: ingredients,
+      p_skin_type: skinType,
+      p_skin_concerns: skinConcerns,
+      p_user_sensitivities: knownSensitivities,
+    });
+
+    if (error) {
+      console.warn('[skincare] RPC error:', error.message);
+      return null;
+    }
+
+    return data as SkinCareAnalysisResult;
+  } catch (err) {
+    console.warn('[skincare] fetchSkinCareAnalysis failed:', err);
+    return null;
+  }
 }
 
 // ─── AI Summary ───────────────────────────────────────────────────────────────

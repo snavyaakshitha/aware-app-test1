@@ -25,15 +25,17 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { s } from '../../../shared/theme';
 import { getProductById } from '../../../shared/mockData';
-import { fetchProductByBarcode } from '../../../shared/productCatalog';
+import { fetchProductByBarcode, fetchProductWithCategory } from '../../../shared/productCatalog';
 import type { OffProductSnapshot, OffNutriments } from '../../../shared/openFoodFacts';
 import { supabase, fetchUserPreferences, getCurrentUser } from '../../../shared/supabase';
 import { loadAIResult, fetchCachedProduct } from '../../../shared/aiProduct';
 import {
-  fetchProductAnalysis, fetchAISummary,
+  fetchProductAnalysis, fetchAISummary, fetchSkinCareAnalysis,
   type ProductAnalysisResult, type SafetyAnalysis,
   type AdditiveAnalysis, type BannedSubstanceMatch,
 } from '../../../shared/scoring';
+import type { SkinCareAnalysisResult, ProductDetectionCategory } from '../../../shared/types';
+import SkinSafetyTab from './tabs/SkinSafetyTab';
 import {
   fmtNum, inferNovaGroup, deriveOverallVerdict,
   buildNutrientRows, generateHeadline, generateAwareTake,
@@ -61,11 +63,13 @@ type LoadState =
       prefs: Partial<UserPreferences> | null;
       obData: OnboardingData | null;
       userId: string | null;
+      category: ProductDetectionCategory;
+      skincareAnalysis: SkinCareAnalysisResult | null;
     };
 
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
-type Tab = 'take' | 'nutrition' | 'ingredients';
+type Tab = 'take' | 'nutrition' | 'ingredients' | 'skin-safety';
 
 // ─── URL safety helper ────────────────────────────────────────────────────────
 // Database-sourced URLs are validated before opening to prevent non-https schemes.
@@ -1044,9 +1048,9 @@ function IngredientsTab({
 
 export default function ScanResultScreen({ route, navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const { productId, barcode } = route.params ?? {};
+  const { productId, barcode, category: routeCategory } = route.params ?? {};
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
-  const [tab, setTab] = useState<Tab>('take');
+  const [tab, setTab] = useState<Tab>(routeCategory === 'skincare' ? 'skin-safety' : 'take');
   const [infoModal, setInfoModal] = useState<InfoModalType>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [additiveModal, setAdditiveModal] = useState<AdditiveItem | null>(null);
@@ -1065,14 +1069,34 @@ export default function ScanResultScreen({ route, navigation }: Props) {
       if (userId) prefs = await fetchUserPreferences(userId).catch(() => null);
       const obData: OnboardingData | null = obRaw ? JSON.parse(obRaw) as OnboardingData : null;
 
+      let detectedCategory: ProductDetectionCategory = routeCategory ?? 'food';
+
       let snapshot: OffProductSnapshot | null = null;
       const cached = await fetchCachedProduct(barcode);
-      if (cached?.ok) snapshot = cached.product;
+      if (cached?.ok) {
+        snapshot = cached.product;
+        // If no explicit route category, use whatever the snapshot knows
+        if (!routeCategory && snapshot.detectedCategory && snapshot.detectedCategory !== 'unknown') {
+          detectedCategory = snapshot.detectedCategory;
+        }
+      }
       if (!snapshot) {
-        const res = await fetchProductByBarcode(barcode);
+        const isSkincare = detectedCategory === 'skincare';
+        const res = isSkincare
+          ? await fetchProductWithCategory(barcode)
+          : await fetchProductByBarcode(barcode);
         if (res.ok) snapshot = res.product;
       }
-      if (!snapshot) snapshot = await loadAIResult(barcode);
+      if (!snapshot) {
+        const ai = await loadAIResult(barcode);
+        if (ai) {
+          snapshot = ai;
+          if (!routeCategory && snapshot.detectedCategory && snapshot.detectedCategory !== 'unknown') {
+            detectedCategory = snapshot.detectedCategory;
+          }
+        }
+      }
+      const isSkincare = detectedCategory === 'skincare';
       if (!snapshot) {
         setState({ kind: 'error', message: 'Product not found. Try scanning again or use AI analysis.' });
         return;
@@ -1082,18 +1106,26 @@ export default function ScanResultScreen({ route, navigation }: Props) {
 
       let analysis: ProductAnalysisResult | null = null;
       let analysisFailureReason: AnalysisFailureReason = null;
-      if (!userId) {
-        analysisFailureReason = 'no_user';
+      let skincareAnalysis: SkinCareAnalysisResult | null = null;
+
+      if (isSkincare) {
+        // Skincare path: call compute_skincare_score
+        skincareAnalysis = await fetchSkinCareAnalysis(snapshot.ingredientsText, userId).catch(() => null);
       } else {
-        try {
-          analysis = await fetchProductAnalysis(barcode, userId, snapshot.ingredientsText);
-          if (analysis === null) analysisFailureReason = 'unavailable';
-        } catch {
-          analysisFailureReason = 'unavailable';
+        // Food path: existing analysis chain
+        if (!userId) {
+          analysisFailureReason = 'no_user';
+        } else {
+          try {
+            analysis = await fetchProductAnalysis(barcode, userId, snapshot.ingredientsText);
+            if (analysis === null) analysisFailureReason = 'unavailable';
+          } catch {
+            analysisFailureReason = 'unavailable';
+          }
         }
       }
 
-      const aiSummary = await fetchAISummary(
+      const aiSummary = isSkincare ? null : await fetchAISummary(
         barcode, userId, snapshot.productName, snapshot.ingredientsText, conditions,
       ).catch(() => null);
 
@@ -1106,6 +1138,8 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         prefs,
         obData,
         userId,
+        category: detectedCategory,
+        skincareAnalysis,
       });
 
       // Analytics: record scan event (non-blocking)
@@ -1140,6 +1174,13 @@ export default function ScanResultScreen({ route, navigation }: Props) {
   }, [barcode, productId]);
 
   useEffect(() => { void load(); }, [load]);
+
+  // When category is resolved from snapshot (not from route param), sync the initial tab
+  useEffect(() => {
+    if (!routeCategory && state.kind === 'off' && state.category === 'skincare') {
+      setTab('skin-safety');
+    }
+  }, [routeCategory, state]);
 
   const effectiveNova = useMemo(
     () => state.kind === 'off' ? inferNovaGroup(state.off) : null,
@@ -1220,7 +1261,7 @@ export default function ScanResultScreen({ route, navigation }: Props) {
   }
 
   // ── Main OFF product view ────────────────────────────────────────────────────
-  const { off, analysis, analysisFailureReason, aiSummary } = state;
+  const { off, analysis, analysisFailureReason, aiSummary, category: detectedCategory, skincareAnalysis } = state;
   const isAI = off.catalogSource === 'ai_gemini' || off.catalogSource === 'ai_gpt';
 
   const banned = analysis?.bannedSubstances ?? [];
@@ -1254,58 +1295,104 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         </View>
       </View>
 
-      {/* Verdict + headline */}
-      <View style={styles.verdictBlock}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8), marginBottom: s(8) }}>
-          <View
-            style={[styles.pill, { backgroundColor: VERDICT_BG[verdict], borderColor: VERDICT_BORDER[verdict], marginBottom: 0 }]}
-            accessibilityLabel={`Overall verdict: ${VERDICT_LABEL[verdict]}`}
-            accessibilityRole="text"
-          >
-            <View style={[styles.pillDot, { backgroundColor: VERDICT_COLOR[verdict] }]} />
-            <Text style={[styles.pillText, { color: VERDICT_COLOR[verdict] }]}>{VERDICT_LABEL[verdict]}</Text>
+      {/* Verdict + headline — food only; skincare uses SkinSafetyTab verdict */}
+      {detectedCategory !== 'skincare' && (
+        <View style={styles.verdictBlock}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8), marginBottom: s(8) }}>
+            <View
+              style={[styles.pill, { backgroundColor: VERDICT_BG[verdict], borderColor: VERDICT_BORDER[verdict], marginBottom: 0 }]}
+              accessibilityLabel={`Overall verdict: ${VERDICT_LABEL[verdict]}`}
+              accessibilityRole="text"
+            >
+              <View style={[styles.pillDot, { backgroundColor: VERDICT_COLOR[verdict] }]} />
+              <Text style={[styles.pillText, { color: VERDICT_COLOR[verdict] }]}>{VERDICT_LABEL[verdict]}</Text>
+            </View>
+            {verdict === 'check' && analysis && (
+              <Text style={{ fontSize: s(11), color: '#ffb830', flexShrink: 1 }}>
+                {(analysis.additives.high.length + analysis.additives.severe.length) > 0
+                  ? `${analysis.additives.high.length + analysis.additives.severe.length} ingredient${analysis.additives.high.length + analysis.additives.severe.length !== 1 ? 's' : ''} flagged ↓ tap below`
+                  : analysis.safety.cautionList.length > 0
+                  ? `${analysis.safety.cautionList.length} caution${analysis.safety.cautionList.length !== 1 ? 's' : ''} for your profile ↓`
+                  : 'See details below ↓'}
+              </Text>
+            )}
           </View>
-          {verdict === 'check' && analysis && (
-            <Text style={{ fontSize: s(11), color: '#ffb830', flexShrink: 1 }}>
-              {(analysis.additives.high.length + analysis.additives.severe.length) > 0
-                ? `${analysis.additives.high.length + analysis.additives.severe.length} ingredient${analysis.additives.high.length + analysis.additives.severe.length !== 1 ? 's' : ''} flagged ↓ tap below`
-                : analysis.safety.cautionList.length > 0
-                ? `${analysis.safety.cautionList.length} caution${analysis.safety.cautionList.length !== 1 ? 's' : ''} for your profile ↓`
-                : 'See details below ↓'}
+          <Text style={styles.verdictHeadline}>{headline}</Text>
+          {isAI && (
+            <Text style={styles.aiDisclaimer}>🤖 AI-extracted — verify allergens on the physical package.</Text>
+          )}
+          {!analysis && (
+            <Text style={{ fontSize: s(11), color: '#555', marginTop: s(4) }}>
+              Ingredient analysis unavailable — connect for full safety check.
             </Text>
           )}
         </View>
-        <Text style={styles.verdictHeadline}>{headline}</Text>
-        {isAI && (
-          <Text style={styles.aiDisclaimer}>🤖 AI-extracted — verify allergens on the physical package.</Text>
-        )}
-        {!analysis && (
-          <Text style={{ fontSize: s(11), color: '#555', marginTop: s(4) }}>
-            Ingredient analysis unavailable — connect for full safety check.
-          </Text>
-        )}
-      </View>
+      )}
+      {detectedCategory === 'skincare' && isAI && (
+        <View style={{ paddingHorizontal: s(16), paddingBottom: s(8) }}>
+          <Text style={styles.aiDisclaimer}>🤖 AI-extracted — verify ingredients on the physical package.</Text>
+        </View>
+      )}
 
-      {/* Tab bar */}
+      {/* Tab bar — exclusive per category */}
       <View style={styles.tabBar}>
-        {(['take', 'nutrition', 'ingredients'] as Tab[]).map((t) => (
+        {(detectedCategory === 'skincare'
+          ? (['skin-safety', 'ingredients'] as Tab[])
+          : (['take', 'nutrition', 'ingredients'] as Tab[])
+        ).map((t) => (
           <Pressable
             key={t}
             style={[styles.tabItem, tab === t && styles.tabItemActive]}
             onPress={() => setTab(t)}
             accessibilityRole="tab"
-            accessibilityLabel={t === 'take' ? 'Our Take tab' : t === 'nutrition' ? 'Nutrition tab' : 'Ingredients tab'}
             accessibilityState={{ selected: tab === t }}
           >
             <Text style={[styles.tabLabel, tab === t && styles.tabLabelActive]}>
-              {t === 'take' ? 'Our Take' : t === 'nutrition' ? 'Nutrition' : 'Ingredients'}
+              {t === 'take' ? 'Our Take'
+                : t === 'nutrition' ? 'Nutrition'
+                : t === 'skin-safety' ? 'Skin Safety'
+                : 'Ingredients'}
             </Text>
           </Pressable>
         ))}
       </View>
 
-      {/* Tab content */}
+      {/* Tab content — exclusive per category */}
       <View style={{ flex: 1 }}>
+        {/* Skincare-specific tabs */}
+        {tab === 'skin-safety' && skincareAnalysis && (
+          <SkinSafetyTab
+            analysis={skincareAnalysis}
+            skinType={state.prefs?.skin_type}
+            skinConcerns={state.prefs?.skin_concerns}
+            productName={off.productName}
+          />
+        )}
+        {tab === 'skin-safety' && !skincareAnalysis && (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: s(24), gap: s(12) }}>
+            <Text style={{ fontSize: s(32) }}>🧴</Text>
+            <Text style={{ color: '#fff', fontSize: s(16), fontWeight: '700', textAlign: 'center' }}>
+              No ingredient data found
+            </Text>
+            <Text style={{ color: '#888', fontSize: s(13), textAlign: 'center', lineHeight: s(20) }}>
+              {off.ingredientsText?.trim()
+                ? 'Our ingredient database couldn\'t analyse this product. Try again later.'
+                : 'The product database doesn\'t have ingredient data for this barcode yet.'}
+            </Text>
+            {barcode && (
+              <Pressable
+                onPress={() => navigation.replace('AIFallback', { barcode, category: 'skincare' })}
+                style={{ marginTop: s(8), backgroundColor: 'rgba(139,197,61,0.12)', borderWidth: 1, borderColor: 'rgba(139,197,61,0.35)', borderRadius: s(10), paddingHorizontal: s(20), paddingVertical: s(12) }}
+              >
+                <Text style={{ color: '#8bc53d', fontSize: s(14), fontWeight: '600' }}>
+                  Try AI analysis →
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
+
+        {/* Food-specific tabs */}
         {tab === 'take' && (
           <OurTakeTab
             off={off} analysis={analysis} analysisFailureReason={analysisFailureReason}
@@ -1320,6 +1407,8 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         {tab === 'nutrition' && (
           <NutritionTab off={off} onInfoModal={setInfoModal} />
         )}
+
+        {/* Shared tab */}
         {tab === 'ingredients' && (
           <IngredientsTab off={off} userAllergens={userAllergens} />
         )}

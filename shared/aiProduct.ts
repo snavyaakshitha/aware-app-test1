@@ -75,6 +75,9 @@ export function aiResultToSnapshot(
     netWeight: ai.net_weight ?? null,
     imageFrontUrl: ai.image_front_url ?? null,
     imageLabelUrl: ai.image_label_url ?? null,
+    detectedCategory: ai.category === 'personal_care' ? 'skincare'
+      : ai.category === 'food' ? 'food'
+      : 'unknown',
   } as OffProductSnapshot;
 }
 
@@ -108,7 +111,7 @@ export async function fetchCachedProduct(barcode: string): Promise<OffFetchResul
   try {
     const { data, error } = await supabase
       .from('products')
-      .select('*')
+      .select('barcode, product_name, brand, ingredients, nutrition_facts, source, image_front_url, image_label_url, category')
       .eq('barcode', barcode)
       .maybeSingle<{
         barcode: string;
@@ -119,11 +122,12 @@ export async function fetchCachedProduct(barcode: string): Promise<OffFetchResul
         source: string;
         image_front_url: string | null;
         image_label_url: string | null;
+        category: string | null;
       }>();
 
     if (error || !data) return null;
 
-    const isAI = data.source === 'gemini' || data.source === 'gpt-4o-mini';
+    const isAI = data.source === 'gemini-2.0-flash' || data.source === 'gpt-4o-mini';
     const catalogSource = isAI
       ? (data.source === 'gpt-4o-mini' ? 'ai_gpt' : 'ai_gemini')
       : 'supabase_cache';
@@ -161,6 +165,10 @@ export async function fetchCachedProduct(barcode: string): Promise<OffFetchResul
         : undefined,
       imageFrontUrl: data.image_front_url ?? null,
       imageLabelUrl: data.image_label_url ?? null,
+      detectedCategory: data.category === 'personal_care' ? 'skincare'
+        : data.category === 'food' ? 'food'
+        : data.category === 'skincare' ? 'skincare'
+        : undefined,
     };
 
     return { ok: true, product: snapshot };

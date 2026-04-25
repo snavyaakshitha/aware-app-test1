@@ -34,6 +34,7 @@ import {
   callAnalyzeProduct,
   saveAIResult,
   aiResultToSnapshot,
+  type AIProductResult,
 } from '../../../shared/aiProduct';
 import { getCurrentUser } from '../../../shared/supabase';
 import type { ScannerStackParamList } from '../../../shared/types';
@@ -109,7 +110,7 @@ function PhotoSlot({ label, hint, icon, photo, onCapture, disabled }: PhotoSlotP
             <View style={styles.slotCheckBadge}>
               <Ionicons name="checkmark" size={s(14)} color="#fff" />
             </View>
-            <Text style={styles.slotRetakeLabel}>Tap to retake</Text>
+            <Text style={styles.slotRetakeLabel}>Tap to retake or change</Text>
           </View>
         </>
       ) : (
@@ -127,8 +128,16 @@ function PhotoSlot({ label, hint, icon, photo, onCapture, disabled }: PhotoSlotP
 
 // ─── Main screen ──────────────────────────────────────────────────────────────
 
+function mapAiCategory(ai: AIProductResult, routeCategory?: string): 'food' | 'skincare' | 'unknown' {
+  if (ai.category === 'personal_care') return 'skincare';
+  if (ai.category === 'food') return 'food';
+  if (routeCategory === 'skincare') return 'skincare';
+  if (routeCategory === 'food') return 'food';
+  return 'unknown';
+}
+
 export default function AIFallbackScreen({ route, navigation }: Props) {
-  const { barcode } = route.params;
+  const { barcode, category: routeCategory } = route.params;
   const insets = useSafeAreaInsets();
   const [, requestCameraPermission] = useCameraPermissions();
 
@@ -142,52 +151,86 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
 
   // ── Camera / picker ─────────────────────────────────────────────────────────
 
-  const capturePhoto = useCallback(
-    async (slot: 'front' | 'label') => {
-      // On native: try camera first; on web: use ImagePicker (which opens file input)
-      if (Platform.OS !== 'web') {
-        const perm = await requestCameraPermission();
-        if (!perm.granted) {
-          Alert.alert('Camera needed', 'Please allow camera access to take photos.');
-          return;
-        }
-      }
-
-      const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
-        quality: 0.82,
-        base64: true,
-        allowsEditing: false,
-        // On web, launchCameraAsync is not available — we fall back to image library
-      }).catch(async () => {
-        // Camera unavailable (e.g. web, simulator) → open gallery
-        return ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['images'],
-          quality: 0.82,
-          base64: true,
-        });
-      });
-
+  const applyPickerResult = useCallback(
+    async (
+      result: ImagePicker.ImagePickerResult,
+      slot: 'front' | 'label',
+    ) => {
       if (result.canceled || !result.assets?.[0]) return;
-
       const asset = result.assets[0];
       let base64 = asset.base64 ?? '';
-
-      // On web the uri IS the base64 data-URL; resize it
       if (Platform.OS === 'web') {
         base64 = await resizeToBase64(asset.uri, 1024);
       } else if (!base64) {
-        // Fallback: read from uri (shouldn't happen with base64:true)
         base64 = asset.uri;
       } else {
         base64 = `data:image/jpeg;base64,${base64}`;
       }
-
       const photoState: PhotoState = { uri: asset.uri, base64 };
       if (slot === 'front') setFrontPhoto(photoState);
       else setLabelPhoto(photoState);
     },
-    [requestCameraPermission],
+    [],
+  );
+
+  const capturePhoto = useCallback(
+    async (slot: 'front' | 'label') => {
+      // On web, always use the file picker (no camera API)
+      if (Platform.OS === 'web') {
+        const result = await ImagePicker.launchImageLibraryAsync({
+          mediaTypes: ['images'],
+          quality: 0.82,
+          base64: true,
+        });
+        await applyPickerResult(result, slot);
+        return;
+      }
+
+      // On native: show action sheet — camera or gallery
+      Alert.alert(
+        'Add photo',
+        'How would you like to add this photo?',
+        [
+          {
+            text: 'Take Photo',
+            onPress: async () => {
+              const perm = await requestCameraPermission();
+              if (!perm.granted) {
+                Alert.alert('Camera needed', 'Please allow camera access in Settings.');
+                return;
+              }
+              const result = await ImagePicker.launchCameraAsync({
+                mediaTypes: ['images'],
+                quality: 0.82,
+                base64: true,
+                allowsEditing: false,
+              }).catch(async () =>
+                ImagePicker.launchImageLibraryAsync({
+                  mediaTypes: ['images'],
+                  quality: 0.82,
+                  base64: true,
+                }),
+              );
+              await applyPickerResult(result, slot);
+            },
+          },
+          {
+            text: 'Choose from Gallery',
+            onPress: async () => {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                quality: 0.82,
+                base64: true,
+              });
+              await applyPickerResult(result, slot);
+            },
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ],
+        { cancelable: true },
+      );
+    },
+    [applyPickerResult, requestCameraPermission],
   );
 
   // ── Submit ──────────────────────────────────────────────────────────────────
@@ -211,8 +254,12 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
       // Cache locally
       await saveAIResult(barcode, aiResult);
 
-      // Navigate to ScanResult — the screen will read the cached AI result
-      navigation.replace('ScanResult', { barcode });
+      // Map AI-detected category → navigation category
+      const detectedCategory = mapAiCategory(aiResult, routeCategory);
+      navigation.replace('ScanResult', {
+        barcode,
+        category: detectedCategory !== 'unknown' ? detectedCategory : undefined,
+      });
     } catch (err) {
       const msg =
         err instanceof Error ? err.message : 'AI analysis failed. Please try again.';
@@ -322,9 +369,15 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
             <Text style={{ fontSize: s(20) }}>🔍</Text>
           </View>
           <View style={styles.noticeBannerBody}>
-            <Text style={styles.noticeBannerTitle}>Product not in any database</Text>
+            <Text style={styles.noticeBannerTitle}>
+              {routeCategory === 'skincare'
+                ? 'No ingredient data in database'
+                : 'Product not in any database'}
+            </Text>
             <Text style={styles.noticeBannerSub}>
-              No problem — snap 2 quick photos and our AI will analyse it instantly.
+              {routeCategory === 'skincare'
+                ? 'Snap a photo of the ingredient label and our AI will extract and analyse it.'
+                : 'No problem — snap 2 quick photos and our AI will analyse it instantly.'}
             </Text>
           </View>
         </View>
@@ -336,7 +389,7 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
         </View>
 
         {/* Instructions */}
-        <Text style={styles.sectionLabel}>TAKE 2 PHOTOS</Text>
+        <Text style={styles.sectionLabel}>ADD 2 PHOTOS</Text>
 
         {/* Photo slots */}
         <View style={styles.slots}>
@@ -348,8 +401,10 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
             onCapture={() => capturePhoto('front')}
           />
           <PhotoSlot
-            label="Nutrition / ingredient label"
-            hint="The ingredients list and nutrition facts panel"
+            label={routeCategory === 'skincare' ? 'Ingredient label / INCI list' : 'Nutrition / ingredient label'}
+            hint={routeCategory === 'skincare'
+              ? 'The full INCI ingredient list (usually on the back or bottom)'
+              : 'The ingredients list and nutrition facts panel'}
             icon="document-text-outline"
             photo={labelPhoto}
             onCapture={() => capturePhoto('label')}
@@ -360,6 +415,7 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
         <View style={styles.tipsCard}>
           <Text style={styles.tipsTitle}>📸 Tips for best results</Text>
           {[
+            'Tap any slot to use camera or choose from gallery',
             'Hold the phone steady — no blurry images',
             'Make sure all text is clearly readable',
             'Good lighting matters (no glare)',

@@ -50,14 +50,14 @@ function applyHealthConditionPrepopulation(data: OnboardingData): OnboardingData
   const addIngredients: string[] = [];
 
   if (conditions.includes('eczema')) {
-    addConcerns.push('Eczema / Dermatitis');
-    addIngredients.push('Fragrance / Parfum', 'SLS');
+    addConcerns.push('eczema');
+    addIngredients.push('fragrance', 'sls');
   }
   if (conditions.includes('psoriasis')) {
-    addConcerns.push('Psoriasis');
+    addConcerns.push('psoriasis');
   }
   if (conditions.includes('pcos')) {
-    addIngredients.push('Parabens', 'Phthalates');
+    addIngredients.push('parabens', 'phthalates');
   }
 
   return {
@@ -129,6 +129,10 @@ export default function OnboardingFlow({ userId, onComplete }: Props) {
             .map((d) => dietMap[d])
             .filter(Boolean) as any,
           onboardingComplete: true,
+          // Skincare profile — IDs stored directly
+          skin_type: (finalData.skinType === 'not_sure' ? null : finalData.skinType || null) as any,
+          skin_concerns: finalData.skinConcerns as any,
+          known_skin_sensitivities: finalData.skinIngredientsToAvoid,
         });
       } catch (_) { /* Supabase failure is non-fatal */ }
     }

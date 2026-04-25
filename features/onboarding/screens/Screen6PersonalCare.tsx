@@ -30,38 +30,40 @@ const PART_TITLES: Record<Part, string> = {
   4: 'Hair profile',
 };
 
-function RadioGrid({ options, value, onSelect }: { options: string[]; value: string; onSelect: (v: string) => void }) {
+type OptionItem = { id: string; label: string; emoji?: string; concern_type?: string };
+
+function RadioGrid({ options, value, onSelect }: { options: OptionItem[]; value: string; onSelect: (v: string) => void }) {
   return (
     <View style={styles.radioGrid}>
       {options.map((opt) => (
         <Pressable
-          key={opt}
-          onPress={() => onSelect(opt)}
-          style={[styles.radioChip, value === opt && styles.radioChipOn]}
+          key={opt.id}
+          onPress={() => onSelect(opt.id)}
+          style={[styles.radioChip, value === opt.id && styles.radioChipOn]}
         >
-          <View style={[styles.radioCircle, value === opt && styles.radioCircleOn]}>
-            {value === opt && <View style={styles.radioDot} />}
+          <View style={[styles.radioCircle, value === opt.id && styles.radioCircleOn]}>
+            {value === opt.id && <View style={styles.radioDot} />}
           </View>
-          <Text style={[styles.radioText, value === opt && styles.radioTextOn]}>{opt}</Text>
+          <Text style={[styles.radioText, value === opt.id && styles.radioTextOn]}>{opt.label}</Text>
         </Pressable>
       ))}
     </View>
   );
 }
 
-function CheckGrid({ options, value, onToggle }: { options: string[]; value: string[]; onToggle: (v: string) => void }) {
+function CheckGrid({ options, value, onToggle }: { options: OptionItem[]; value: string[]; onToggle: (v: string) => void }) {
   return (
     <View style={styles.checkGrid}>
       {options.map((opt) => {
-        const active = value.includes(opt);
+        const active = value.includes(opt.id);
         return (
           <Pressable
-            key={opt}
-            onPress={() => onToggle(opt)}
+            key={opt.id}
+            onPress={() => onToggle(opt.id)}
             style={[styles.checkChip, active && styles.checkChipOn]}
           >
             <Text style={[styles.checkText, active && styles.checkTextOn]} numberOfLines={2}>
-              {opt}
+              {opt.label}
             </Text>
           </Pressable>
         );

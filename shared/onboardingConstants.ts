@@ -114,67 +114,93 @@ export const DIET_PATTERN_ROWS: { id: DietPatternId; label: string }[] = [
 
 export const DIET_NON_SPECIFIC: string[] = ['omnivore', 'no_specific'];
 
-// ─── Screen 6 – Personal Care ─────────────────────────────────────────────────
-export const SKIN_TYPES: string[] = [
-  'Dry', 'Oily', 'Combination', 'Sensitive', 'Normal', 'Not sure',
+// ─── Screen 6 – Personal Care (Skincare) ──────────────────────────────────────
+export interface SkinTypeOption {
+  id: string;
+  label: string;
+}
+
+export const SKIN_TYPES: SkinTypeOption[] = [
+  { id: 'dry', label: 'Dry' },
+  { id: 'oily', label: 'Oily' },
+  { id: 'combination', label: 'Combination' },
+  { id: 'sensitive', label: 'Sensitive' },
+  { id: 'normal', label: 'Normal' },
+  { id: 'not_sure', label: 'Not sure' },
 ];
 
-export const SKIN_CONCERNS: string[] = [
-  'Acne / Breakouts',
-  'Eczema / Dermatitis',
-  'Psoriasis',
-  'Rosacea',
-  'Anti-aging / Wrinkles',
-  'Dark spots / Hyperpigmentation',
-  'Sensitive / Reactive',
-  'Dry / Dehydrated',
-  'Oily / Acne-prone',
-  'None / Just want clean products',
+export interface SkinConcernOption {
+  id: string;
+  label: string;
+  emoji?: string;
+}
+
+export const SKIN_CONCERNS: SkinConcernOption[] = [
+  { id: 'acne', label: 'Acne / Breakouts', emoji: '🤔' },
+  { id: 'eczema', label: 'Eczema / Dermatitis', emoji: '😤' },
+  { id: 'psoriasis', label: 'Psoriasis', emoji: '😤' },
+  { id: 'rosacea', label: 'Rosacea', emoji: '🔴' },
+  { id: 'aging', label: 'Anti-aging / Wrinkles', emoji: '⏰' },
+  { id: 'hyperpigmentation', label: 'Dark spots / Hyperpigmentation', emoji: '⚫' },
+  { id: 'sensitivity', label: 'Sensitive / Reactive', emoji: '⚠️' },
+  { id: 'dryness', label: 'Dry / Dehydrated', emoji: '🏜️' },
+  { id: 'oiliness', label: 'Oily / Acne-prone', emoji: '💦' },
+  { id: 'none', label: 'None / Just want clean products', emoji: '✅' },
 ];
 
-export const SKIN_INGREDIENTS_TO_AVOID: string[] = [
-  'Fragrance / Parfum',
-  'SLS',
-  'Parabens',
-  'Phthalates',
-  'Formaldehyde-releasing preservatives',
-  'Methylisothiazolinone (MI/MCI)',
-  'Essential oils',
-  'Retinoids',
-  'Salicylic acid / BHA',
-  'Benzoyl peroxide',
-  'Alcohol denat',
-  'Silicones',
-  'Mineral oil / Petrolatum',
-  'None / Just show clean scores',
+export interface SkinIngredientAvoidOption {
+  id: string;
+  label: string;
+  concern_type: 'allergen' | 'irritant' | 'endocrine_disruptor' | 'photo_sensitizer' | 'comedogenic' | 'drying' | 'other';
+}
+
+export const SKIN_INGREDIENTS_TO_AVOID: SkinIngredientAvoidOption[] = [
+  { id: 'fragrance', label: 'Fragrance / Parfum', concern_type: 'allergen' },
+  { id: 'sls', label: 'SLS (Sodium Lauryl Sulfate)', concern_type: 'irritant' },
+  { id: 'parabens', label: 'Parabens', concern_type: 'endocrine_disruptor' },
+  { id: 'phthalates', label: 'Phthalates', concern_type: 'endocrine_disruptor' },
+  { id: 'formaldehyde_releasers', label: 'Formaldehyde-releasing preservatives', concern_type: 'irritant' },
+  { id: 'mit_mci', label: 'Methylisothiazolinone (MI/MCI)', concern_type: 'allergen' },
+  { id: 'essential_oils', label: 'Essential oils', concern_type: 'allergen' },
+  { id: 'retinoids', label: 'Retinoids (Retinol, Retinoid Acid)', concern_type: 'photo_sensitizer' },
+  { id: 'salicylic_acid', label: 'Salicylic acid / BHA', concern_type: 'irritant' },
+  { id: 'benzoyl_peroxide', label: 'Benzoyl peroxide', concern_type: 'irritant' },
+  { id: 'alcohol_denat', label: 'Alcohol denat', concern_type: 'drying' },
+  { id: 'silicones', label: 'Silicones', concern_type: 'other' },
+  { id: 'mineral_oil', label: 'Mineral oil / Petrolatum', concern_type: 'comedogenic' },
+  { id: 'none', label: 'None / Just show clean scores', concern_type: 'other' },
 ];
 
-export const HAIR_TYPES: string[] = [
-  'Straight', 'Wavy', 'Curly', 'Coily / Textured', 'Not sure',
+export const HAIR_TYPES: { id: string; label: string }[] = [
+  { id: 'straight', label: 'Straight' },
+  { id: 'wavy', label: 'Wavy' },
+  { id: 'curly', label: 'Curly' },
+  { id: 'coily', label: 'Coily / Textured' },
+  { id: 'not_sure', label: 'Not sure' },
 ];
 
-export const HAIR_CONCERNS: string[] = [
-  'Dry / Damaged',
-  'Oily / Greasy',
-  'Frizz',
-  'Breakage',
-  'Color-treated',
-  'Sensitive scalp',
-  'Dandruff',
-  'Fine / Thin',
-  'Thick / Coarse',
-  'None',
+export const HAIR_CONCERNS: { id: string; label: string }[] = [
+  { id: 'dry_damaged', label: 'Dry / Damaged' },
+  { id: 'oily', label: 'Oily / Greasy' },
+  { id: 'frizz', label: 'Frizz' },
+  { id: 'breakage', label: 'Breakage' },
+  { id: 'color_treated', label: 'Color-treated' },
+  { id: 'sensitive_scalp', label: 'Sensitive scalp' },
+  { id: 'dandruff', label: 'Dandruff' },
+  { id: 'fine_thin', label: 'Fine / Thin' },
+  { id: 'thick_coarse', label: 'Thick / Coarse' },
+  { id: 'none', label: 'None' },
 ];
 
-export const HAIR_INGREDIENTS_TO_AVOID: string[] = [
-  'Sulfates (SLS / SLES)',
-  'Silicones',
-  'Parabens',
-  'Fragrance',
-  'Protein overload',
-  'Heavy oils',
-  'Alcohol',
-  'None / Not sure',
+export const HAIR_INGREDIENTS_TO_AVOID: { id: string; label: string }[] = [
+  { id: 'sulfates', label: 'Sulfates (SLS / SLES)' },
+  { id: 'silicones', label: 'Silicones' },
+  { id: 'parabens', label: 'Parabens' },
+  { id: 'fragrance', label: 'Fragrance' },
+  { id: 'protein_overload', label: 'Protein overload' },
+  { id: 'heavy_oils', label: 'Heavy oils' },
+  { id: 'alcohol', label: 'Alcohol' },
+  { id: 'none', label: 'None / Not sure' },
 ];
 
 // ─── Screen 7 – Household ─────────────────────────────────────────────────────

@@ -13,8 +13,10 @@ import {
   Platform,
   FlatList,
   ActivityIndicator,
+  Vibration,
 } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as ImagePicker from 'expo-image-picker';
 import ProductBarcodeCamera from './ProductBarcodeCamera';
 import { PRODUCT_BARCODE_TYPES } from './barcodeTypes';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -23,16 +25,17 @@ import { Ionicons, Feather, MaterialIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import { Colors, Font, s, Radius, scoreColor, scoreLabel, scoreBgColor } from '../../../shared/theme';
-import { fetchProductByBarcode, resolveTextToBarcode } from '../../../shared/productCatalog';
+import { fetchProductByBarcode, resolveTextToBarcode, detectProductCategory } from '../../../shared/productCatalog';
 import { extractProductCode } from '../../../shared/scanResolve';
 import { fetchUserPreferences, getCurrentUser } from '../../../shared/supabase';
+import { extractBarcodeFromImage } from '../../../shared/barcodeFromImage';
 import type { ScannerStackParamList, UserPreferences } from '../../../shared/types';
 
 type Props = NativeStackScreenProps<ScannerStackParamList, 'Scanner'>;
 
 type ScanState = 'idle' | 'scanning' | 'found' | 'not_found';
 
-type RecentItem = { barcode: string; name: string };
+type RecentItem = { barcode: string; name: string; category?: 'food' | 'skincare' | 'unknown' };
 
 // ─── Scan zone dimensions ─────────────────────────────────────────────────────
 const ZONE_W = s(310);
@@ -50,10 +53,12 @@ export default function ScannerScreen({ navigation }: Props) {
   const [prefs, setPrefs] = useState<Partial<UserPreferences> | null>(null);
   const [cameraGate, setCameraGate] = useState(true);
   const [systemScannerAvailable, setSystemScannerAvailable] = useState(false);
+  const [galleryScanning, setGalleryScanning] = useState(false);
 
   const pausedRef = useRef(false);
   const acceptScansRef = useRef(true);
   const lastScanRef = useRef<{ t: number; raw: string }>({ t: 0, raw: '' });
+  const lastCategoryRef = useRef<'food' | 'skincare' | 'unknown'>('unknown');
   const scanLineY = useRef(new Animated.Value(0)).current;
   const scanLineLoop = useRef<Animated.CompositeAnimation | null>(null);
 
@@ -63,6 +68,7 @@ export default function ScannerScreen({ navigation }: Props) {
     name: string;
     brand: string;
     barcode: string;
+    category?: 'food' | 'skincare' | 'unknown';
   } | null>(null);
 
   useFocusEffect(
@@ -131,8 +137,12 @@ export default function ScannerScreen({ navigation }: Props) {
 
       setScanState('scanning');
       startScanLine();
-      const res = await fetchProductByBarcode(lookupCode);
+      const [res, category] = await Promise.all([
+        fetchProductByBarcode(lookupCode),
+        detectProductCategory(lookupCode),
+      ]);
       stopScanLine();
+      lastCategoryRef.current = category;
 
       if (!res.ok) {
         setScanState('not_found');
@@ -147,9 +157,10 @@ export default function ScannerScreen({ navigation }: Props) {
         name: res.product.productName,
         brand: res.product.brand,
         barcode: lookupCode,
+        category,
       });
       setRecent((prev) => [
-        { barcode: lookupCode, name: res.product.productName },
+        { barcode: lookupCode, name: res.product.productName, category },
         ...prev.filter((x) => x.barcode !== lookupCode),
       ].slice(0, 5));
 
@@ -164,6 +175,7 @@ export default function ScannerScreen({ navigation }: Props) {
   const onBarcodeScanned = useCallback(
     (event: { data: string }) => {
       if (!acceptScansRef.current || pausedRef.current) return;
+      Vibration.vibrate(40);
       void processRawScan(event.data, 'camera');
     },
     [processRawScan]
@@ -183,7 +195,10 @@ export default function ScannerScreen({ navigation }: Props) {
   }, [sheetOpacity, sheetY]);
 
   const handleViewDetails = useCallback(() => {
-    if (previewProduct) navigation.navigate('ScanResult', { barcode: previewProduct.barcode });
+    if (previewProduct) navigation.navigate('ScanResult', {
+      barcode: previewProduct.barcode,
+      category: previewProduct.category,
+    });
   }, [navigation, previewProduct]);
 
   const handleDemo = useCallback(() => {
@@ -216,6 +231,29 @@ export default function ScannerScreen({ navigation }: Props) {
     setCameraGate(true);
     setScanState('idle');
   }, []);
+
+  const pickFromGallery = useCallback(async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      quality: 0.85,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+
+    const asset = result.assets[0];
+    let base64 = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+
+    setGalleryScanning(true);
+    const barcode = await extractBarcodeFromImage(asset.uri, base64);
+    setGalleryScanning(false);
+
+    if (!barcode) {
+      setScanState('not_found');
+      lastScanRef.current = { t: Date.now(), raw: '' };
+      return;
+    }
+    void processRawScan(barcode, 'manual');
+  }, [processRawScan]);
 
   const isWeb = Platform.OS === 'web';
   const camAllowed = permission?.granted === true;
@@ -329,7 +367,7 @@ export default function ScannerScreen({ navigation }: Props) {
                   style={styles.aiFallbackCta}
                   onPress={() => {
                     const code = lastScanRef.current.raw;
-                    if (code) navigation.navigate('AIFallback', { barcode: code });
+                    if (code) navigation.navigate('AIFallback', { barcode: code, category: lastCategoryRef.current });
                   }}
                 >
                   <View style={styles.aiFallbackCtaLeft}>
@@ -385,6 +423,14 @@ export default function ScannerScreen({ navigation }: Props) {
               </Pressable>
             )}
             {scanState === 'idle' && (
+              <Pressable onPress={() => void pickFromGallery()} style={styles.actionChip} disabled={galleryScanning}>
+                <Ionicons name="images-outline" size={s(14)} color={Colors.accent} />
+                <Text style={styles.actionChipText}>
+                  {galleryScanning ? 'Reading…' : 'From gallery'}
+                </Text>
+              </Pressable>
+            )}
+            {scanState === 'idle' && (
               <Pressable onPress={handleDemo} style={styles.actionChip}>
                 <Ionicons name="flask-outline" size={s(14)} color={Colors.textMuted} />
                 <Text style={[styles.actionChipText, { color: Colors.textMuted }]}>
@@ -406,7 +452,7 @@ export default function ScannerScreen({ navigation }: Props) {
                 contentContainerStyle={{ gap: s(8) }}
                 renderItem={({ item }) => (
                   <Pressable
-                    onPress={() => navigation.navigate('ScanResult', { barcode: item.barcode })}
+                    onPress={() => navigation.navigate('ScanResult', { barcode: item.barcode, category: item.category })}
                     style={styles.recentCard}
                   >
                     <Feather name="package" size={s(18)} color={Colors.accent} />
@@ -450,11 +496,13 @@ export default function ScannerScreen({ navigation }: Props) {
       )}
 
       {/* Loading overlay */}
-      {scanState === 'scanning' && (
+      {(scanState === 'scanning' || galleryScanning) && (
         <View style={styles.loadingDot} pointerEvents="none">
           <View style={styles.loadingDotInner}>
             <ActivityIndicator size="small" color={Colors.accent} />
-            <Text style={styles.loadingDotText}>Looking up…</Text>
+            <Text style={styles.loadingDotText}>
+              {galleryScanning ? 'Reading barcode…' : 'Looking up…'}
+            </Text>
           </View>
         </View>
       )}

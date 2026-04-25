@@ -54,6 +54,8 @@ export type OffProductSnapshot = {
   netWeight?: string | null;
   imageFrontUrl?: string | null;
   imageLabelUrl?: string | null;
+  // Category inferred from AI result or Supabase cache — used when route param is absent
+  detectedCategory?: 'food' | 'skincare' | 'unknown';
 };
 
 export type OffFetchResult =

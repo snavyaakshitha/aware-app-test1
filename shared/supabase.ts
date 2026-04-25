@@ -114,6 +114,10 @@ type UserProfileRow = {
   onboarding_complete: boolean;
   membership_tier: string | null;
   location: string | null;
+  // Skincare profile
+  skin_type: string | null;
+  skin_concerns: string[];
+  known_skin_sensitivities: string[];
 };
 
 const secureStorageAdapter = {
@@ -236,6 +240,9 @@ export async function fetchUserPreferences(userId: string): Promise<Partial<User
     location: data.location ?? '',
     membershipTier: (data.membership_tier as UserPreferences['membershipTier']) ?? 'free',
     onboardingComplete: data.onboarding_complete ?? false,
+    skin_type: (data.skin_type as UserPreferences['skin_type']) ?? null,
+    skin_concerns: (data.skin_concerns ?? []) as UserPreferences['skin_concerns'],
+    known_skin_sensitivities: data.known_skin_sensitivities ?? [],
   };
 }
 
@@ -263,6 +270,11 @@ export async function upsertUserPreferences(
   }
   if (prefs.membershipTier !== undefined) payload.membership_tier = prefs.membershipTier;
   if (prefs.location !== undefined) payload.location = prefs.location;
+  if (prefs.skin_type !== undefined) payload.skin_type = prefs.skin_type ?? null;
+  if (prefs.skin_concerns !== undefined) payload.skin_concerns = prefs.skin_concerns as string[];
+  if (prefs.known_skin_sensitivities !== undefined) {
+    payload.known_skin_sensitivities = prefs.known_skin_sensitivities;
+  }
 
   const { error } = await supabase.from('user_profiles').upsert(payload, {
     onConflict: 'id',

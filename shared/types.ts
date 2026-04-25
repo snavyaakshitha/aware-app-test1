@@ -88,6 +88,13 @@ export type IngredientToAvoid =
   | 'silicon_dioxide'
   | 'caramel_color';
 
+export type SkinType = 'oily' | 'dry' | 'combination' | 'sensitive' | 'normal';
+
+export type SkinConcern =
+  | 'acne' | 'eczema' | 'psoriasis' | 'rosacea'
+  | 'aging' | 'hyperpigmentation' | 'sensitivity'
+  | 'dryness' | 'oiliness';
+
 export interface UserPreferences {
   name: string;
   avatar?: string;
@@ -99,6 +106,10 @@ export interface UserPreferences {
   location: string;
   membershipTier: 'free' | 'supporter' | 'annual';
   onboardingComplete: boolean;
+  // Skincare profile fields
+  skin_type?: SkinType | null;
+  skin_concerns?: SkinConcern[];
+  known_skin_sensitivities?: string[];
 }
 
 // ─── Products ─────────────────────────────────────────────────────────────────
@@ -153,6 +164,7 @@ export interface Product {
 }
 
 export type ProductCategory =
+  // Food & Nutrition
   | 'snacks' | 'chocolate' | 'bars'
   | 'dairy_alternatives' | 'dairy'
   | 'beverages' | 'water' | 'tea' | 'coffee'
@@ -163,7 +175,13 @@ export type ProductCategory =
   | 'supplements' | 'protein'
   | 'baking'
   | 'sauces' | 'spreads'
-  | 'chips_crackers';
+  | 'chips_crackers'
+  // Skincare & Beauty
+  | 'skincare_cleansers' | 'skincare_moisturizers' | 'skincare_treatments'
+  | 'skincare_sunscreen' | 'skincare_masks' | 'skincare_serums'
+  | 'makeup' | 'haircare' | 'bodycare'
+  // Household & General
+  | 'household_cleaning' | 'laundry' | 'personal_care';
 
 // ─── Stores ───────────────────────────────────────────────────────────────────
 
@@ -202,6 +220,26 @@ export interface ShoppingList {
   cleanScoreAvg?: number;
 }
 
+// ─── Skincare Analysis ────────────────────────────────────────────────────────
+
+export interface SkincareIngredientFlag {
+  ingredient: string;
+  concern_level: 'severe' | 'high' | 'medium' | 'low';
+  concern_types: string[];
+  reason: string;
+  sources: Array<{ source_name: string; url: string; confidence: number }>;
+}
+
+export interface SkinCareAnalysisResult {
+  verdict: 'clean' | 'flag';
+  flagged_ingredients: SkincareIngredientFlag[];
+  severe_count: number;
+  high_count: number;
+  total_flagged?: number;
+}
+
+export type ProductDetectionCategory = 'food' | 'skincare' | 'unknown';
+
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 export type RootStackParamList = {
@@ -220,9 +258,9 @@ export type HomeStackParamList = {
 export type ScannerStackParamList = {
   Scanner: undefined;
   /** `productId` = mock catalog id; `barcode` = Open Food Facts / AI lookup. */
-  ScanResult: { productId?: string; barcode?: string };
+  ScanResult: { productId?: string; barcode?: string; category?: ProductDetectionCategory };
   /** AI fallback: user takes 2 photos → Gemini/GPT extracts product data. */
-  AIFallback: { barcode: string };
+  AIFallback: { barcode: string; category?: ProductDetectionCategory };
 };
 
 export type ListsStackParamList = {

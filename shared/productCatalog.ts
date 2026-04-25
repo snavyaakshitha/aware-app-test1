@@ -353,3 +353,55 @@ export async function resolveTextToBarcode(query: string): Promise<string | null
   const hits = await searchProductsText(query);
   return hits[0]?.code ?? null;
 }
+
+/**
+ * Detect product category by trying OBF first, then barcode prefix patterns.
+ * Returns: 'skincare' if found in beauty DB or matches beauty prefix, 'food' otherwise.
+ */
+export async function detectProductCategory(barcode: string): Promise<'food' | 'skincare' | 'unknown'> {
+  const code = barcode.trim();
+  if (!code) return 'unknown';
+
+  // Strategy 1: Try Open Beauty Facts first (fastest indicator)
+  const obfUrl = `https://world.openbeautyfacts.org/api/v2/product/${code}?fields=code`;
+  try {
+    const res = await fetch(obfUrl, {
+      headers: { Accept: 'application/json', 'User-Agent': UA },
+    });
+    if (res.ok) {
+      const json = (await res.json()) as { status?: number };
+      if (json.status === 1) return 'skincare';
+    }
+  } catch {
+    // Continue to next strategy
+  }
+
+  // Strategy 2: Check barcode prefix patterns
+  // EAN-13/UPC-A prefixes for cosmetics/beauty (200-299 range)
+  const prefix = code.substring(0, 3);
+  if (['200', '201', '202', '203', '204', '205', '206', '207', '208', '209'].includes(prefix)) {
+    return 'skincare';
+  }
+
+  // Strategy 3: Default to food (most common)
+  return 'food';
+}
+
+/**
+ * Fetch product by barcode with automatic category detection.
+ * Routes to OBF for skincare, OFF chain for food.
+ */
+export async function fetchProductWithCategory(barcode: string): Promise<OffFetchResult> {
+  const category = await detectProductCategory(barcode);
+
+  if (category === 'skincare') {
+    // Try OBF specifically
+    const base = 'https://world.openbeautyfacts.org';
+    const r = await fetchOpenFactsStyle(base, barcode, 'obf', 'Open Beauty Facts');
+    if (r.ok) return r;
+    // Fall back to other sources if OBF fails
+  }
+
+  // Food or fallback: use standard chain
+  return fetchProductByBarcode(barcode);
+}
