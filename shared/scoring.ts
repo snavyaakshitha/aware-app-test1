@@ -10,7 +10,12 @@
  */
 
 import { supabase } from './supabase';
-import type { SkinCareAnalysisResult } from './types';
+import type {
+  SkinCareAnalysisResult,
+  BannedIngredientMatch,
+  IngredientConflictMatch,
+  AllergenMatch,
+} from './types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -52,10 +57,23 @@ export interface BannedSubstanceMatch {
   sourceUrl: string | null;
 }
 
+export interface GlobalBanResult {
+  bannedIngredients: BannedIngredientMatch[];
+  hasSevereBan: boolean;
+}
+
+export interface ConflictResult {
+  conflicts: IngredientConflictMatch[];
+  hasSevereConflict: boolean;
+}
+
 export interface ProductAnalysisResult {
   safety: SafetyAnalysis;
   additives: AdditiveAnalysis;
   bannedSubstances: BannedSubstanceMatch[];
+  globalBans: GlobalBanResult;
+  conflicts: ConflictResult;
+  allergenMatches: AllergenMatch[];
 }
 
 // ─── Ingredient parser (depth-aware, handles nested parentheses) ──────────────
@@ -134,8 +152,8 @@ export async function fetchProductAnalysis(
     ]);
   }
 
-  // Run all three RPCs in parallel; allSettled shows partial results when any RPC fails
-  const [healthSettled, additiveSettled, bannedSettled] = await Promise.allSettled([
+  // Run all six RPCs in parallel; allSettled shows partial results when any RPC fails
+  const [healthSettled, additiveSettled, bannedSettled, globalBansSettled, conflictsSettled, allergensSettled] = await Promise.allSettled([
     withTimeout(
       supabase.rpc('compute_health_fit_score', {
         p_ingredients: ingredients,
@@ -153,6 +171,25 @@ export async function fetchProductAnalysis(
     ),
     withTimeout(
       supabase.rpc('check_banned_substances', { ingredients }),
+      15_000,
+    ),
+    withTimeout(
+      supabase.rpc('check_banned_ingredients_worldwide', {
+        p_ingredients: ingredients,
+        p_country_code: 'US',
+      }),
+      15_000,
+    ),
+    withTimeout(
+      supabase.rpc('check_ingredient_conflicts', {
+        p_ingredients: ingredients,
+      }),
+      15_000,
+    ),
+    withTimeout(
+      supabase.rpc('get_allergens_for_ingredients', {
+        p_ingredients: ingredients,
+      }),
       15_000,
     ),
   ]);
@@ -179,15 +216,19 @@ export async function fetchProductAnalysis(
     return null;
   }
 
-  // banned is non-fatal — degraded result still shows health/additives
+  // Non-fatal RPCs — degraded result still shows health/additives
   const bannedData = bannedSettled.status === 'fulfilled' && !bannedSettled.value.error
-    ? bannedSettled.value.data
-    : null;
-  if (bannedSettled.status === 'rejected') {
-    console.warn('[analysis] check_banned_substances failed:', bannedSettled.reason);
-  } else if (bannedSettled.status === 'fulfilled' && bannedSettled.value.error) {
-    console.warn('[analysis] check_banned_substances error:', bannedSettled.value.error.message);
-  }
+    ? bannedSettled.value.data : null;
+  const globalBansData = globalBansSettled.status === 'fulfilled' && !globalBansSettled.value.error
+    ? globalBansSettled.value.data : null;
+  const conflictsData = conflictsSettled.status === 'fulfilled' && !conflictsSettled.value.error
+    ? conflictsSettled.value.data : null;
+  const allergensData = allergensSettled.status === 'fulfilled' && !allergensSettled.value.error
+    ? allergensSettled.value.data : null;
+
+  if (bannedSettled.status === 'rejected') console.warn('[analysis] check_banned_substances:', bannedSettled.reason);
+  if (globalBansSettled.status === 'rejected') console.warn('[analysis] check_banned_ingredients_worldwide:', globalBansSettled.reason);
+  if (conflictsSettled.status === 'rejected') console.warn('[analysis] check_ingredient_conflicts:', conflictsSettled.reason);
 
   const healthData = (Array.isArray(healthResult.data)
     ? healthResult.data[0]
@@ -195,7 +236,6 @@ export async function fetchProductAnalysis(
 
   const additiveData = (additiveResult.data ?? []) as AdditiveMatch[];
 
-  // Map snake_case RPC response to camelCase
   const bannedRaw = (bannedData ?? []) as Array<{
     ingredient: string;
     substance_name: string;
@@ -214,6 +254,10 @@ export async function fetchProductAnalysis(
     sourceUrl: b.source_url ?? null,
   }));
 
+  const globalBanRows = (globalBansData ?? []) as BannedIngredientMatch[];
+  const conflictRows = (conflictsData ?? []) as IngredientConflictMatch[];
+  const allergenRows = (allergensData ?? []) as AllergenMatch[];
+
   const safety: SafetyAnalysis = {
     verdict: deriveSafetyVerdict(healthData),
     allergenConflicts: (healthData?.allergen_conflicts as string[]) ?? [],
@@ -230,10 +274,21 @@ export async function fetchProductAnalysis(
     total:  additiveData.length,
   };
 
+  const globalBans: GlobalBanResult = {
+    bannedIngredients: globalBanRows,
+    hasSevereBan: globalBanRows.some((b) => b.ban_status === 'banned'),
+  };
+
+  const conflicts: ConflictResult = {
+    conflicts: conflictRows,
+    hasSevereConflict: conflictRows.some((c) => c.severity === 'severe'),
+  };
+
   console.log(
     `[analysis] ✅ verdict=${safety.verdict} allergens=${safety.allergenConflicts.length}` +
     ` avoid=${safety.avoidList.length} additives=${additives.total}` +
-    ` banned=${bannedSubstances.length}`,
+    ` banned=${bannedSubstances.length} globalBans=${globalBanRows.length}` +
+    ` conflicts=${conflictRows.length} allergenMatches=${allergenRows.length}`,
   );
 
   // Record scan history (non-blocking, authenticated users only)
@@ -244,7 +299,7 @@ export async function fetchProductAnalysis(
       .then(({ error }) => { if (error) console.warn('[analysis] Scan log failed:', error.message); });
   }
 
-  return { safety, additives, bannedSubstances };
+  return { safety, additives, bannedSubstances, globalBans, conflicts, allergenMatches: allergenRows };
 }
 
 // ─── Skincare Analysis ────────────────────────────────────────────────────────

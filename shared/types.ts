@@ -33,19 +33,47 @@ export type HealthCondition =
   | 'endometriosis';
 
 export type Allergen =
-  | 'gluten' | 'wheat'
-  | 'dairy' | 'lactose'
+  // ── FDA Top 9 (US) ──────────────────────────────────────────
+  | 'milk'       // replaces 'dairy' for DB alignment
+  | 'dairy'      // legacy alias → maps to 'milk'
   | 'eggs'
-  | 'peanuts'
-  | 'tree_nuts'
-  | 'soy'
   | 'fish'
   | 'shellfish'
-  | 'sesame'
-  | 'corn'
-  | 'nightshades'
+  | 'crustaceans'
+  | 'tree_nuts'
+  | 'peanuts'
+  | 'wheat'
+  | 'soy'
+  | 'sesame'     // FDA 9th allergen since Jan 2023 (FASTER Act)
+  // ── EU-14 Additional Allergens ──────────────────────────────
+  | 'gluten'     // celiac / gluten sensitivity (wheat + barley + rye)
+  | 'mollusks'
+  | 'mustard'
+  | 'celery'
+  | 'lupin'
   | 'sulfites'
-  | 'fructose';
+  // ── Food Intolerances ───────────────────────────────────────
+  | 'lactose'    // lactose intolerance
+  | 'fructose'   // hereditary fructose intolerance / malabsorption
+  | 'histamine'  // histamine intolerance (DAO deficiency)
+  | 'fodmap'     // IBS / FODMAP sensitivity
+  | 'nightshades'
+  | 'corn'
+  | 'salicylates'
+  | 'coconut'
+  | 'bee_pollen' // bee products (honey, propolis, royal jelly)
+  // ── Contact / Skin Allergens ────────────────────────────────
+  | 'fragrance_mix'
+  | 'parabens'
+  | 'formaldehyde'
+  | 'methylisothiazolinone'
+  | 'propylene_glycol'
+  | 'lanolin'
+  | 'latex'
+  | 'nickel'
+  | 'cobalt'
+  | 'chromium'
+  | 'balsam_peru';
 
 export type DietType =
   | 'vegan'
@@ -272,3 +300,219 @@ export type ProfileStackParamList = {
   Profile: undefined;
   EditPreferences: undefined;
 };
+
+// ─── Database Types (new regulatory schema) ───────────────────────────────────
+
+export interface DBIngredient {
+  id: number;
+  inci_name: string;
+  common_names: string[];
+  cas_number: string | null;
+  ingredient_category: string;
+  description: string | null;
+}
+
+export interface DBBannedIngredient {
+  ingredient_name: string;
+  country_code: string;
+  ban_status: 'banned' | 'restricted' | 'regulated';
+  effective_date: string | null;
+  active: boolean;
+  regulation_link: string | null;
+  reason: string | null;
+  category_restricted_to: string[] | null;
+  max_concentration_ppm: number | null;
+  notes: string | null;
+  regulatory_body_code?: string | null;
+}
+
+export interface DBBannedProduct {
+  id: number;
+  product_name: string;
+  brand_name: string;
+  barcode: string | null;
+  countries_banned: string[];
+  ban_reason: string;
+  recall_link: string | null;
+  ban_date: string | null;
+  recall_type: 'safety_recall' | 'misleading_claims' | 'regulatory_ban' | 'voluntary_withdrawal' | 'contamination' | null;
+  category: string | null;
+  status: 'active' | 'expired' | 'under_review';
+}
+
+export interface DBAllergenDefinition {
+  id: number;
+  allergen_code: string;
+  display_name: string;
+  is_food_allergen: boolean;
+  is_contact_allergen: boolean;
+  prevalence_percent: number | null;
+  symptoms: string[];
+  regulatory_mention: string | null;
+}
+
+export interface DBIngredientConflict {
+  ingredient_1_name: string;
+  ingredient_2_name: string;
+  conflict_type: 'chemical_reaction' | 'contraindicated' | 'reduced_efficacy' | 'increased_toxicity' | 'amplified_side_effect' | 'drug_interaction';
+  severity: 'severe' | 'high' | 'medium' | 'low';
+  description: string | null;
+  health_risk: string | null;
+  product_type_context: string | null;
+}
+
+export interface DBHouseholdRule {
+  ingredient_pattern: string;
+  concern_type: string;
+  severity: 'severe' | 'high' | 'medium' | 'low';
+  human_health_impacts: string[];
+  environmental_impact: string[];
+  safer_alternatives: string[];
+  reason: string | null;
+}
+
+export interface DBSupplementRule {
+  ingredient_pattern: string;
+  concern_type: string;
+  severity: 'severe' | 'high' | 'medium' | 'low';
+  health_impacts: string[];
+  drug_interactions: string[];
+  contraindicated_conditions: string[];
+  safe_dose_range: Record<string, unknown> | null;
+  banned_by_agencies: string[] | null;
+}
+
+export interface DBBodycareRule {
+  ingredient_pattern: string;
+  concern_type: string;
+  severity: 'severe' | 'high' | 'medium' | 'low';
+  health_impacts: string[];
+  affected_skin_types: string[] | null;
+  better_alternatives: string[];
+}
+
+// RPC return types
+export interface BannedIngredientMatch {
+  ingredient_name: string;
+  country_code: string;
+  ban_status: string;
+  reason: string | null;
+  regulation_link: string | null;
+  regulatory_body_code: string | null;
+  category_restricted_to: string[] | null;
+  notes: string | null;
+}
+
+export interface IngredientConflictMatch {
+  ingredient_1_name: string;
+  ingredient_2_name: string;
+  conflict_type: string;
+  severity: string;
+  description: string | null;
+  health_risk: string | null;
+}
+
+export interface AllergenMatch {
+  ingredient_name: string;
+  allergen_code: string;
+  display_name: string;
+  relationship_type: string;
+  confidence: number;
+}
+
+// ─── Extended DB Interface Types (regulatory schema) ──────────────────────────
+
+export interface DBIngredientSource {
+  id: number;
+  ingredient_id: number;
+  source_type: 'official_database' | 'regulatory_body' | 'research_paper' | 'scientific_study' | 'industry_organization' | 'manufacturer' | 'other';
+  source_name: string;
+  source_url: string;
+  url_status: 'active' | 'archived' | '404' | 'paywalled' | 'unknown' | 'redirects';
+  last_checked_at: string | null;
+  confidence_score: number;
+  excerpt: string | null;
+  publication_date: string | null;
+  verified: boolean;
+}
+
+export interface DBIngredientAllergenRelationship {
+  id: number;
+  ingredient_id: number | null;
+  ingredient_name: string;
+  allergen_id: number;
+  allergen_code: string;
+  relationship_type: 'contains' | 'cross_reacts' | 'derived_from' | 'labeled_as' | 'may_contain' | 'processed_on_shared_equipment';
+  confidence: number;
+  notes: string | null;
+  source_url: string | null;
+}
+
+export interface DBRegulatoryBody {
+  id: number;
+  code: string;    // e.g. "FDA", "EMA", "MHRA", "TGA"
+  name: string;
+  country: string | null;
+  jurisdiction_type: 'national' | 'regional' | 'international';
+  established_year: number | null;
+  website_url: string | null;
+  database_url: string | null;
+}
+
+export interface DBSourceUrl {
+  id: number;
+  url: string;
+  source_name: string;
+  domain: string | null;
+  url_status: 'active' | 'archived' | '404' | 'redirects' | 'paywalled' | 'unknown';
+  last_checked_at: string | null;
+  http_status_code: number | null;
+  confidence_score: number;
+  credibility_tier: 'official' | 'academic' | 'professional' | 'industry' | 'consumer' | 'unverified';
+  total_citations: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DBProductCategory {
+  id: number;
+  code: string;          // e.g. "food_snacks", "skincare_cleanser"
+  display_name: string;
+  category_type: 'food' | 'beauty_skincare' | 'beauty_bodycare' | 'cosmetics' | 'household' | 'supplement' | 'pharma';
+  parent_category_code: string | null;
+  description: string | null;
+  icon_name: string | null;
+  applicable_rules_table: string | null;
+}
+
+export interface DBIngredientAlias {
+  id: number;
+  ingredient_id: number;
+  alias_name: string;
+  language: string;
+  region: string | null;
+  is_common_name: boolean;
+}
+
+export interface DBFoodAdditiveRule {
+  id: number;
+  ingredient_pattern: string;
+  ingredient_id: number | null;
+  concern_type: string;
+  severity: 'severe' | 'high' | 'medium' | 'low';
+  penalty_points: number;
+  reason: string | null;
+  health_impacts: string[];
+  applicable_categories: string[];
+  active: boolean;
+}
+
+/** Full scan analysis result returned by fetchProductAnalysis() */
+export interface FullProductAnalysis {
+  safety: import('./scoring').SafetyAnalysis;
+  additives: import('./scoring').AdditiveAnalysis;
+  bannedSubstances: import('./scoring').BannedSubstanceMatch[];
+  globalBans: import('./scoring').GlobalBanResult;
+  conflicts: import('./scoring').ConflictResult;
+  allergenMatches: AllergenMatch[];
+}
