@@ -15,7 +15,136 @@ import type {
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-export type OverallVerdict = 'good' | 'acceptable' | 'check' | 'avoid';
+export type OverallVerdict = 'green' | 'yellow' | 'red';
+
+// ─── Product sub-category (for context-aware sugar scoring) ──────────────────
+
+export type ProductSubCategory =
+  | 'whole_food'
+  | 'dark_chocolate'
+  | 'chocolate'
+  | 'sports_drink'
+  | 'energy_drink'
+  | 'juice'
+  | 'dairy'
+  | 'condiment'
+  | 'breakfast'
+  | 'baked_good'
+  | 'snack'
+  | 'beverage_other'
+  | 'general_food';
+
+export interface SugarThresholds {
+  servingG: number;
+  green: number;
+  yellow: number;
+  per100gContext: boolean;
+  contextNote?: string;
+}
+
+export function inferProductSubCategory(
+  off: OffProductSnapshot,
+  nova: number | null,
+): ProductSubCategory {
+  if (nova === 1) return 'whole_food';
+  const name = (off.productName ?? '').toLowerCase();
+  const brand = (off.brand ?? '').toLowerCase();
+  const ingredients = (off.ingredientsText ?? '').toLowerCase();
+
+  if (
+    (name.includes('dark chocolate') || name.includes('cacao') || name.includes('cocoa')) &&
+    (name.match(/\d{2,3}%/) ||
+      ingredients.startsWith('cacao') ||
+      ingredients.startsWith('cocoa'))
+  ) return 'dark_chocolate';
+  if (name.includes('chocolate')) return 'chocolate';
+
+  if (
+    name.includes('electrolyte') || name.includes('hydration') ||
+    brand.includes('liquid i.v') || brand.includes('liquid iv') ||
+    brand.includes('gatorade') || brand.includes('powerade') ||
+    name.includes('sports drink')
+  ) return 'sports_drink';
+
+  if (
+    name.includes('energy drink') || brand.includes('monster') ||
+    brand.includes('red bull') || name.includes('bang ')
+  ) return 'energy_drink';
+
+  if (name.includes('juice') || name.includes('smoothie')) return 'juice';
+
+  if (
+    name.includes('milk') || name.includes('yogurt') || name.includes('yoghurt') ||
+    name.includes('kefir') || ingredients.startsWith('milk')
+  ) return 'dairy';
+
+  if (
+    name.includes('sauce') || name.includes('dressing') || name.includes('ketchup') ||
+    name.includes('bbq') || name.includes('jam') || name.includes('honey') ||
+    name.includes('mustard') || name.includes('mayo')
+  ) return 'condiment';
+
+  if (
+    name.includes('cereal') || name.includes('oat') || name.includes('granola') ||
+    name.includes('muesli') || name.includes('porridge')
+  ) return 'breakfast';
+
+  if (
+    name.includes('cookie') || name.includes('biscuit') || name.includes('cake') ||
+    name.includes('brownie') || name.includes('muffin') || name.includes('wafer') ||
+    name.includes('cracker') || name.includes('bread')
+  ) return 'baked_good';
+
+  if (
+    name.includes('chip') || name.includes('crisp') || name.includes('pretzel') ||
+    name.includes('bar') || name.includes('jerky') || name.includes('popcorn')
+  ) return 'snack';
+
+  if (
+    name.includes('tea') || name.includes('coffee') || name.includes('latte') ||
+    name.includes('drink') || name.includes('beverage')
+  ) return 'beverage_other';
+
+  return 'general_food';
+}
+
+export function getSugarThresholds(subCat: ProductSubCategory): SugarThresholds {
+  switch (subCat) {
+    case 'whole_food':
+      return { servingG: 100, green: 999, yellow: 999, per100gContext: false,
+        contextNote: 'Naturally occurring sugar — not added sugar.' };
+    case 'dark_chocolate':
+      return { servingG: 28, green: 8, yellow: 12, per100gContext: true,
+        contextNote: 'Per 2 squares (28g). Higher cacao % = more antioxidants, less sugar.' };
+    case 'chocolate':
+      return { servingG: 40, green: 10, yellow: 15, per100gContext: true };
+    case 'sports_drink':
+      return { servingG: 240, green: 0, yellow: 19, per100gContext: false,
+        contextNote: 'Designed for exercise >60 min. Not suitable as a daily beverage.' };
+    case 'energy_drink':
+      return { servingG: 240, green: 8, yellow: 21, per100gContext: false,
+        contextNote: 'High caffeine + sugar. Limit to 1 per day maximum.' };
+    case 'juice':
+      return { servingG: 240, green: 12, yellow: 20, per100gContext: false,
+        contextNote: 'Lacks fibre of whole fruit. Counts toward daily sugar limit.' };
+    case 'dairy':
+      return { servingG: 200, green: 12, yellow: 20, per100gContext: false,
+        contextNote: 'Includes naturally occurring lactose — not added sugar.' };
+    case 'condiment':
+      return { servingG: 15, green: 3, yellow: 6, per100gContext: false };
+    case 'breakfast':
+      return { servingG: 45, green: 6, yellow: 12, per100gContext: true };
+    case 'baked_good':
+      return { servingG: 40, green: 6, yellow: 12, per100gContext: true,
+        contextNote: 'Best enjoyed occasionally, not daily.' };
+    case 'snack':
+      return { servingG: 28, green: 4, yellow: 8, per100gContext: true };
+    case 'beverage_other':
+      return { servingG: 240, green: 8, yellow: 15, per100gContext: false };
+    default:
+      return { servingG: 100, green: 5, yellow: 22.5, per100gContext: true };
+  }
+}
 
 export type NutrientRow = {
   label: string;
@@ -56,20 +185,88 @@ export function deriveOverallVerdict(
   nova: number | null,
   ns: string | null,
 ): OverallVerdict {
-  if (safety.allergenConflicts.length > 0 || banned.length > 0) return 'avoid';
-  if (safety.avoidList.length > 0 || additives.severe.length > 0) return 'avoid';
-  if (safety.cautionList.length > 0 || additives.high.length > 0) return 'check';
-  const hasPositive =
+  // RED: hard stops
+  if (safety.allergenConflicts.length > 0) return 'red';
+  if (banned.length > 0) return 'red';
+  if (safety.avoidList.length > 0) return 'red';
+  if (additives.severe.length > 0) return 'red';
+
+  // YELLOW: concerns present
+  if (safety.cautionList.length > 0) return 'yellow';
+  if (additives.high.length > 0) return 'yellow';
+  if (nova === 4 && ns !== null && ['d', 'e'].includes(ns.toLowerCase())) return 'yellow';
+
+  // GREEN: positive signals with no medium+ additives
+  const isClean =
     safety.beneficialList.length > 0 ||
     nova === 1 ||
     (ns !== null && ['a', 'b'].includes(ns.toLowerCase()));
-  return hasPositive ? 'good' : 'acceptable';
+  if (isClean && additives.medium.length === 0) return 'green';
+
+  // YELLOW: no hard concerns but medium additives present
+  if (additives.medium.length > 0 || additives.total > 2) return 'yellow';
+
+  return 'green';
+}
+
+export function generateVerdictSentence(
+  verdict: OverallVerdict,
+  off: OffProductSnapshot,
+  analysis: ProductAnalysisResult | null,
+  effectiveNova: number | null,
+): string {
+  const nm = off.nutriments;
+  const safety = analysis?.safety;
+  const additives = analysis?.additives;
+  const banned = analysis?.bannedSubstances ?? [];
+
+  if (verdict === 'red') {
+    if (safety?.allergenConflicts.length)
+      return `Contains ${safety.allergenConflicts[0]} — not compatible with your profile.`;
+    if (banned.length > 0)
+      return `Contains ${banned[0].substanceName} — banned in ${banned[0].jurisdictions[0]}.`;
+    if (safety?.avoidList.length)
+      return `Contains ${safety.avoidList[0].ingredient} — flagged for your health conditions.`;
+    if (additives?.severe.length)
+      return `Contains ${additives.severe[0].ingredient} — severe concern. Best avoided.`;
+    return 'Serious concerns detected. See full analysis below.';
+  }
+
+  if (verdict === 'yellow') {
+    if (additives?.high.length)
+      return `${additives.high.length} high-concern additive${additives.high.length > 1 ? 's' : ''} — limit to occasional use.`;
+    if (nm?.sugars_100g !== null && nm?.sugars_100g !== undefined && nm.sugars_100g >= 22.5)
+      return `High sugar (${fmtNum(nm.sugars_100g)}g/100g) — limit how often you have this.`;
+    if (effectiveNova === 4)
+      return 'Ultra-processed — check the ingredients list for additives.';
+    if (safety?.cautionList.length)
+      return `Contains ${safety.cautionList[0].ingredient} — worth checking given your health profile.`;
+    return 'Some concerns present — see details before buying regularly.';
+  }
+
+  // GREEN
+  if (effectiveNova === 1) {
+    const parts = off.ingredientsText?.split(',').filter((x) => x.trim()) ?? [];
+    if (parts.length > 0 && parts.length <= 5)
+      return `Only ${parts.length} ingredient${parts.length !== 1 ? 's' : ''}. Clean and minimally processed.`;
+    return 'Whole food. No additives. Minimal processing.';
+  }
+  if (safety?.beneficialList.length)
+    return `Contains ${safety.beneficialList[0].ingredient} — beneficial for your profile.`;
+  const ns = off.nutriscoreGrade?.toLowerCase();
+  if (ns === 'a' || ns === 'b') return 'Good nutritional balance. A solid everyday choice.';
+  return 'No major concerns. Check the full breakdown for details.';
 }
 
 // ─── buildNutrientRows ────────────────────────────────────────────────────────
 
-export function buildNutrientRows(nm: OffNutriments, novaGroup: number | null): NutrientRow[] {
-  const isWholeFood = novaGroup === 1;
+export function buildNutrientRows(
+  nm: OffNutriments,
+  novaGroup: number | null,
+  subCat: ProductSubCategory = 'general_food',
+): NutrientRow[] {
+  const isWholeFood = novaGroup === 1 || subCat === 'whole_food';
+  const thresh = getSugarThresholds(subCat);
   // Computed once to avoid duplicate expressions (salt may be derived from sodium)
   const saltValue = nm.salt_100g ?? (nm.sodium_100g !== null ? nm.sodium_100g * 2.5 : null);
 
@@ -89,17 +286,29 @@ export function buildNutrientRows(nm: OffNutriments, novaGroup: number | null): 
       what: nm.sugars_100g !== null
         ? isWholeFood
           ? nm.sugars_100g > 10
-            ? `${fmtNum(nm.sugars_100g)}g — naturally occurring (e.g. fruit). Not added sugar.`
+            ? `${fmtNum(nm.sugars_100g)}g/100g — naturally occurring. Not added sugar.`
             : 'Naturally occurring sugar. Not added.'
-          : nm.sugars_100g >= 40 ? 'Very high — WHO limit is 50g/day total'
-          : nm.sugars_100g >= 22.5 ? 'High — limit to occasional consumption'
-          : nm.sugars_100g <= 5 ? 'Low — good choice'
-          : 'Moderate'
+          : (() => {
+              const perServing = (nm.sugars_100g / 100) * thresh.servingG;
+              const note = thresh.contextNote ? ` ${thresh.contextNote}` : '';
+              if (nm.sugars_100g >= 40)
+                return `${fmtNum(nm.sugars_100g)}g/100g (${fmtNum(perServing)}g per serving) — very high.${note}`;
+              if (perServing > thresh.yellow)
+                return `${fmtNum(nm.sugars_100g)}g/100g (${fmtNum(perServing)}g per serving) — high per WHO guidelines.${note}`;
+              if (perServing <= thresh.green)
+                return `${fmtNum(nm.sugars_100g)}g/100g (${fmtNum(perServing)}g per serving) — low. Good choice.${note}`;
+              return `${fmtNum(nm.sugars_100g)}g/100g (${fmtNum(perServing)}g per serving) — moderate.${note}`;
+            })()
         : 'Not available',
       alert: nm.sugars_100g !== null
         ? isWholeFood
           ? 'none'
-          : nm.sugars_100g >= 22.5 ? 'red' : nm.sugars_100g >= 10 ? 'amber' : 'green'
+          : (() => {
+              const perServing = (nm.sugars_100g / 100) * thresh.servingG;
+              if (perServing > thresh.yellow) return 'red';
+              if (perServing > thresh.green) return 'amber';
+              return 'green';
+            })()
         : 'none',
     },
     {

@@ -243,6 +243,70 @@ function IngredientCard({ item }: { item: SkincareIngredientFlag }) {
   );
 }
 
+// ─── Skincare sub-type detection ─────────────────────────────────────────────
+
+type SkincareSubType = 'lip' | 'face' | 'sunscreen' | 'body' | 'hair' | 'general';
+
+function inferSkincareSubType(productName: string): SkincareSubType {
+  const n = productName.toLowerCase();
+  if (n.includes('lip') || n.includes('lipstick') || n.includes('lip gloss') || n.includes('lip balm') || n.includes('lip liner')) return 'lip';
+  if (n.includes('sunscreen') || n.includes('spf') || n.includes('sun block') || n.includes('sunblock') || n.includes('uv')) return 'sunscreen';
+  if (n.includes('shampoo') || n.includes('conditioner') || n.includes('hair mask') || n.includes('hair oil') || n.includes('dry shampoo')) return 'hair';
+  if (n.includes('face') || n.includes('serum') || n.includes('moisturiser') || n.includes('moisturizer') || n.includes('toner') || n.includes('cleanser') || n.includes('exfoliant') || n.includes('retinol') || n.includes('vitamin c')) return 'face';
+  if (n.includes('body') || n.includes('lotion') || n.includes('body wash') || n.includes('shower') || n.includes('hand cream') || n.includes('foot cream')) return 'body';
+  return 'general';
+}
+
+function getChecksForSubType(subType: SkincareSubType): string[] {
+  const shared = [
+    'EU Cosmetics Regulation (banned & restricted)',
+    'IFRA fragrance allergen standards',
+    'EWG Skin Deep hazard ratings',
+    'Endocrine disruptors (parabens, phthalates)',
+  ];
+
+  switch (subType) {
+    case 'lip':
+      return [
+        ...shared,
+        'Heavy metals (lead, arsenic) — lip ingestion risk',
+        'Common irritants for sensitive skin',
+      ];
+    case 'face':
+      return [
+        ...shared,
+        'Common irritants for sensitive skin',
+        'Comedogenic (pore-clogging) ingredients',
+        'Penetration enhancers — active ingredient interaction',
+      ];
+    case 'sunscreen':
+      return [
+        ...shared,
+        'Chemical UV filter safety (oxybenzone, octinoxate)',
+        'Mineral vs. chemical filter classification',
+        'Photostability — does UV protection break down in sunlight?',
+      ];
+    case 'body':
+      return [
+        ...shared,
+        'Common irritants for sensitive skin',
+        'Environmental / biodegradability concerns',
+      ];
+    case 'hair':
+      return [
+        ...shared,
+        'Sulphate content — scalp and color-safety',
+        'Silicone buildup — long-term hair health',
+      ];
+    default:
+      return [
+        ...shared,
+        'Common irritants for sensitive skin',
+        'Comedogenic (pore-clogging) ingredients',
+      ];
+  }
+}
+
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
 export default function SkinSafetyTab({ analysis, skinType, skinConcerns, productName }: Props) {
@@ -260,6 +324,8 @@ export default function SkinSafetyTab({ analysis, skinType, skinConcerns, produc
 
   const headline   = generateHeadline(flagged, analysis.verdict);
   const awaresTake = generateAwaresTake(flagged, analysis.verdict, productName, skinType, skinConcerns);
+  const skincareSubType = inferSkincareSubType(productName);
+  const relevantChecks = getChecksForSubType(skincareSubType);
 
   return (
     <ScrollView
@@ -365,14 +431,7 @@ export default function SkinSafetyTab({ analysis, skinType, skinConcerns, produc
             <Feather name="check-circle" size={s(16)} color="#34C759" />
             <Text style={styles.cleanStateTitle}>What we checked</Text>
           </View>
-          {[
-            'EU Cosmetics Regulation (banned & restricted)',
-            'IFRA fragrance allergen standards',
-            'EWG Skin Deep hazard ratings',
-            'Endocrine disruptor lists (parabens, phthalates)',
-            'Common irritants for sensitive skin',
-            'Comedogenic (pore-clogging) ingredients',
-          ].map((item) => (
+          {relevantChecks.map((item) => (
             <View key={item} style={styles.cleanCheckRow}>
               <View style={styles.cleanCheckDot} />
               <Text style={styles.cleanCheckText}>{item}</Text>

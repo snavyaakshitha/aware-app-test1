@@ -74,6 +74,7 @@ export interface ProductAnalysisResult {
   globalBans: GlobalBanResult;
   conflicts: ConflictResult;
   allergenMatches: AllergenMatch[];
+  _hallucinationDetected?: boolean;
 }
 
 // ─── Ingredient parser (depth-aware, handles nested parentheses) ──────────────
@@ -147,8 +148,35 @@ export async function fetchProductAnalysis(
   }
   if (!ingredientsText?.trim()) return null;
 
-  const ingredients = parseIngredientsArray(ingredientsText);
+  let ingredients = parseIngredientsArray(ingredientsText);
   if (ingredients.length === 0) return null;
+
+  // Guard 1: suspiciously high ingredient count (AI hallucination signal)
+  if (ingredients.length > 60) {
+    console.warn(`[analysis] Suspicious ingredient count (${ingredients.length}) — capping at 60, flagging result.`);
+    ingredients = ingredients.slice(0, 60);
+  }
+
+  // Guard 2: non-food chemical signals (AI queried wrong database)
+  const HALLUCINATION_SIGNALS = [
+    'naphthylamine', 'naphthylamines', 'isopropyl alcohol', 'benzalkonium chloride',
+    'ethyl alcohol 70', 'hand sanitizer active', 'industrial dye',
+  ];
+  const hallucinationDetected = ingredients.some((ing) =>
+    HALLUCINATION_SIGNALS.some((sig) => ing.toLowerCase().includes(sig)),
+  );
+  if (hallucinationDetected) {
+    console.warn('[analysis] Hallucination signal detected — returning flagged empty result.');
+    return {
+      _hallucinationDetected: true,
+      safety: { verdict: 'safe', allergenConflicts: [], avoidList: [], cautionList: [], beneficialList: [] },
+      additives: { severe: [], high: [], medium: [], low: [], total: 0 },
+      bannedSubstances: [],
+      globalBans: { bannedIngredients: [], hasSevereBan: false },
+      conflicts: { conflicts: [], hasSevereConflict: false },
+      allergenMatches: [],
+    };
+  }
 
   console.log(`[analysis] Analysing barcode ${barcode}: ${ingredients.length} ingredients`);
 
