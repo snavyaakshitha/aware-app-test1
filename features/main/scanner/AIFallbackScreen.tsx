@@ -11,7 +11,7 @@
  * (Barcode number is already captured — no photo needed.)
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -146,6 +146,10 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
   const [phase, setPhase] = useState<ScreenPhase>('capture');
   const [errorMsg, setErrorMsg] = useState('');
   const [statusText, setStatusText] = useState('Sending images to AI…');
+  const analysisTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear timeout on unmount
+  useEffect(() => () => { if (analysisTimeoutRef.current) clearTimeout(analysisTimeoutRef.current); }, []);
 
   const canSubmit = frontPhoto !== null && labelPhoto !== null && phase === 'capture';
 
@@ -240,6 +244,12 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
     setPhase('analyzing');
     setStatusText('Sending images to AI…');
 
+    // 30-second safety timeout — show clean error instead of hanging forever
+    analysisTimeoutRef.current = setTimeout(() => {
+      setErrorMsg('__timeout__');
+      setPhase('error');
+    }, 30_000);
+
     try {
       const user = await getCurrentUser().catch(() => null);
 
@@ -251,6 +261,9 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
         user?.id ?? null,
       );
 
+      clearTimeout(analysisTimeoutRef.current!);
+      analysisTimeoutRef.current = null;
+
       // Cache locally
       await saveAIResult(barcode, aiResult);
 
@@ -261,9 +274,10 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
         category: detectedCategory !== 'unknown' ? detectedCategory : undefined,
       });
     } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : 'AI analysis failed. Please try again.';
-      setErrorMsg(msg);
+      clearTimeout(analysisTimeoutRef.current!);
+      analysisTimeoutRef.current = null;
+      const rawMsg = err instanceof Error ? err.message : '';
+      setErrorMsg(rawMsg);
       setPhase('error');
     }
   }, [barcode, frontPhoto, labelPhoto, navigation]);
@@ -309,31 +323,28 @@ export default function AIFallbackScreen({ route, navigation }: Props) {
 
   // ── Error state ───────────────────────────────────────────────────────────
   if (phase === 'error') {
-    const isNetworkError = errorMsg.toLowerCase().includes('network') || errorMsg.toLowerCase().includes('unavailable');
-    const isImageError = errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('photo');
-    const isTimeout = errorMsg.toLowerCase().includes('too long');
+    const isTimeout    = errorMsg === '__timeout__';
+    const isNetworkError = !isTimeout && (errorMsg.toLowerCase().includes('network') || errorMsg.toLowerCase().includes('unavailable'));
+    const isImageError   = !isTimeout && (errorMsg.toLowerCase().includes('image') || errorMsg.toLowerCase().includes('photo'));
 
-    let emoji = '😕';
-    let suggestion = 'Try retaking the photos with better lighting and clearer text.';
-
-    if (isImageError) {
-      emoji = '📸';
-      suggestion = 'Make sure the text on both labels is clearly visible with good lighting and no glare.';
-    } else if (isTimeout) {
-      emoji = '⏱️';
-      suggestion = 'This can happen with large images. Try taking smaller, zoomed-in photos of the key information.';
-    } else if (isNetworkError) {
-      emoji = '📡';
-      suggestion = 'Check your internet connection and try again.';
-    }
+    const emoji = isTimeout ? '⏱️' : isImageError ? '📸' : isNetworkError ? '📡' : '😕';
+    const suggestion = isTimeout
+      ? 'The request timed out. Check your connection and try again with smaller or sharper photos.'
+      : isImageError
+      ? 'Make sure the text on both labels is clearly visible with good lighting and no glare.'
+      : isNetworkError
+      ? 'Check your internet connection and try again.'
+      : 'Try retaking the photos with better lighting and clearer text.';
 
     return (
       <View style={styles.root}>
         {header}
         <View style={styles.centeredFlex}>
           <Text style={{ fontSize: s(52), marginBottom: s(16) }}>{emoji}</Text>
-          <Text style={styles.errorTitle}>AI analysis failed</Text>
-          <Text style={styles.errorMessage}>{errorMsg}</Text>
+          <Text style={styles.errorTitle}>Couldn't analyse this product</Text>
+          <Text style={styles.errorMessage}>
+            Try again or scan a different barcode.
+          </Text>
           <View style={styles.suggestionBox}>
             <Text style={styles.suggestionText}>💡 {suggestion}</Text>
           </View>

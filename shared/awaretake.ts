@@ -173,6 +173,7 @@ export function generateHeadline(
   const safety = analysis?.safety;
   const additives = analysis?.additives;
   const banned = analysis?.bannedSubstances ?? [];
+  const globalBanIngredients = analysis?.globalBans?.bannedIngredients ?? [];
 
   if (safety?.allergenConflicts.length) {
     const listed = safety.allergenConflicts.slice(0, 2).join(' and ');
@@ -183,7 +184,21 @@ export function generateHeadline(
     const first = banned[0];
     const countries = first.jurisdictions.slice(0, 3).join(', ');
     const more = first.jurisdictions.length > 3 ? ` +${first.jurisdictions.length - 3}` : '';
-    return `Contains ${first.substanceName} — banned in ${countries}${more}. Still permitted in the US.`;
+    return `Contains ${first.substanceName} — banned in ${countries}${more}.`;
+  }
+
+  // Global ban hits — deduplicate names already captured by the legacy ban check above
+  const _legacyBanNames = new Set(banned.map(b => b.substanceName.toLowerCase()));
+  const _dedupedGlobal = globalBanIngredients.filter(
+    b => !_legacyBanNames.has(b.ingredient_name.toLowerCase()),
+  );
+  if (_dedupedGlobal.length > 0) {
+    const uniqueNames = [...new Set(_dedupedGlobal.map((b) => b.ingredient_name))];
+    const uniqueCountries = [...new Set(_dedupedGlobal.map((b) => b.country_code))];
+    if (uniqueNames.length === 1) {
+      return `Contains ${uniqueNames[0]} — banned in ${uniqueCountries.length} jurisdiction${uniqueCountries.length !== 1 ? 's' : ''}.`;
+    }
+    return `${uniqueNames.length} ingredients flagged against global ban lists (${uniqueCountries.length} jurisdictions).`;
   }
 
   if (additives?.severe.length) {
@@ -266,11 +281,22 @@ export function generateAwareTake(
   const safety = analysis?.safety;
   const additives = analysis?.additives;
   const banned = analysis?.bannedSubstances ?? [];
+  const globalBanIngredients = analysis?.globalBans?.bannedIngredients ?? [];
   const sentences: string[] = [];
 
   if (banned.length > 0) {
     sentences.push(
       `This product contains ${banned[0].substanceName}, which is banned in ${banned[0].jurisdictions.join(', ')} due to ${(banned[0].reason ?? 'safety concerns').toLowerCase().split('.')[0]}.`,
+    );
+  } else if (globalBanIngredients.length > 0) {
+    const uniqueNames = [...new Set(globalBanIngredients.map((b) => b.ingredient_name))];
+    const uniqueCountries = [...new Set(globalBanIngredients.map((b) => b.country_code))];
+    const firstName = uniqueNames[0];
+    const reason = globalBanIngredients.find((b) => b.reason)?.reason ?? null;
+    sentences.push(
+      uniqueNames.length === 1
+        ? `This product contains ${firstName}, which is banned or restricted in ${uniqueCountries.length} jurisdiction${uniqueCountries.length !== 1 ? 's' : ''}${reason ? ` — ${reason.toLowerCase().split('.')[0]}` : ''}.`
+        : `This product contains ${uniqueNames.length} ingredients (including ${firstName}) that appear on global ban lists across ${uniqueCountries.length} jurisdiction${uniqueCountries.length !== 1 ? 's' : ''}.`,
     );
   } else if (safety?.allergenConflicts.length) {
     sentences.push(`This product contains ${safety.allergenConflicts.join(' and ')}, which conflicts with your allergen profile.`);
@@ -323,4 +349,93 @@ export function generateAwareTake(
   }
 
   return sentences.slice(0, 3).join(' ');
+}
+
+// ─── getDecisionSummary ───────────────────────────────────────────────────────
+// 5-8 word bold sentence shown directly under the verdict pill.
+// Designed for grab-and-go users who need an instant reason for the verdict.
+
+export function getDecisionSummary(
+  analysis: ProductAnalysisResult | null,
+  effectiveNova: number | null,
+  nutriscoreGrade: string | null,
+): string {
+  const safety = analysis?.safety;
+  const additives = analysis?.additives;
+  const banned = analysis?.bannedSubstances ?? [];
+  const globalBanIngredients = analysis?.globalBans?.bannedIngredients ?? [];
+
+  // Allergen conflict — most personal, highest priority
+  if (safety?.allergenConflicts.length) {
+    const allergen = safety.allergenConflicts[0];
+    return `Contains ${allergen} — not safe for you.`;
+  }
+
+  // Legacy banned substance
+  if (banned.length > 0) {
+    const jCount = banned[0].jurisdictions.length;
+    return `Substance banned in ${jCount > 1 ? `${jCount} regions` : banned[0].jurisdictions[0]}.`;
+  }
+
+  // Global ban hits — deduplicate names already captured by the legacy ban check above
+  const legacyBanNames = new Set(banned.map(b => b.substanceName.toLowerCase()));
+  const dedupedGlobal = globalBanIngredients.filter(
+    b => !legacyBanNames.has(b.ingredient_name.toLowerCase()),
+  );
+  if (dedupedGlobal.length > 0) {
+    const uniqueNames = [...new Set(dedupedGlobal.map((b) => b.ingredient_name))];
+    const uniqueCountries = [...new Set(dedupedGlobal.map((b) => b.country_code))];
+    const hasUsaBan = uniqueCountries.some((c) => c === 'US');
+    const hasEuBan  = uniqueCountries.some((c) => ['EU', 'DE', 'FR', 'GB', 'ES', 'IT'].includes(c));
+    const regionLabel = hasUsaBan ? 'the US and other regions'
+      : hasEuBan && uniqueCountries.length === 1 ? 'the EU'
+      : hasEuBan ? `the EU and ${uniqueCountries.length - 1} other region${uniqueCountries.length > 2 ? 's' : ''}`
+      : `${uniqueCountries.length} jurisdiction${uniqueCountries.length !== 1 ? 's' : ''}`;
+    if (uniqueNames.length === 1) {
+      return `${uniqueNames[0]} is banned in ${regionLabel}.`;
+    }
+    return `${uniqueNames.length} ingredients flagged in ${regionLabel}.`;
+  }
+
+  // Severe additives
+  if (additives?.severe.length) {
+    return `Contains a severe-concern additive.`;
+  }
+
+  // Avoid list (personalized)
+  if (safety?.avoidList.length) {
+    return `${safety.avoidList.length} ingredient${safety.avoidList.length > 1 ? 's' : ''} flagged for your profile.`;
+  }
+
+  // High-concern additives
+  if (additives?.high.length) {
+    return `${additives.high.length} high-concern additive${additives.high.length > 1 ? 's' : ''} detected.`;
+  }
+
+  // Caution list (personalized)
+  if (safety?.cautionList.length) {
+    return 'Mild concerns — review the details below.';
+  }
+
+  // Medium additives
+  if (additives?.medium.length) {
+    return `${additives.medium.length} moderate-concern ingredient${additives.medium.length > 1 ? 's' : ''}.`;
+  }
+
+  // No analysis available — fall back to nutrition
+  if (!analysis) {
+    if (effectiveNova === 1) return 'Whole food — no additives detected.';
+    const ns = nutriscoreGrade?.toLowerCase();
+    if (ns === 'a' || ns === 'b') return 'Good nutritional quality.';
+    if (ns === 'd' || ns === 'e') return 'Poor nutritional quality.';
+    return 'Scan result ready — see details below.';
+  }
+
+  // All clear
+  if (effectiveNova === 1) return 'Whole food. Minimal processing, no additives.';
+  if (additives?.total === 0) return 'No flagged ingredients found.';
+  const ns = nutriscoreGrade?.toLowerCase();
+  if (ns === 'a') return 'Excellent nutrition. No major concerns.';
+  if (ns === 'b') return 'Good nutrition. No major concerns.';
+  return 'No major concerns detected.';
 }
