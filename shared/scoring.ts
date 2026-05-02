@@ -77,10 +77,15 @@ export interface ProductAnalysisResult {
 }
 
 // ─── Ingredient parser (depth-aware, handles nested parentheses) ──────────────
+// For compound sub-ingredients like "genoa salami (pork, salt, bha, bht, ...)",
+// items longer than 80 chars are flattened: the base name is extracted and the
+// parenthetical sub-ingredients are recursively parsed. This ensures additives
+// embedded inside compound ingredient declarations (e.g. BHA inside a cured meat
+// sub-list) are always detected by the RPC matching layer.
 
-function parseIngredientsArray(text: string): string[] {
-  if (!text?.trim()) return [];
-  const parts: string[] = [];
+function parseIngredientsArray(text: string, _depth = 0): string[] {
+  if (!text?.trim() || _depth > 4) return [];
+  const topParts: string[] = [];
   let cur = '';
   let depth = 0;
   for (const ch of text) {
@@ -88,16 +93,35 @@ function parseIngredientsArray(text: string): string[] {
     else if (ch === ')') depth--;
     else if ((ch === ',' || ch === ';') && depth === 0) {
       const t = cur.trim();
-      if (t) parts.push(t);
+      if (t) topParts.push(t);
       cur = '';
       continue;
     }
     cur += ch;
   }
-  if (cur.trim()) parts.push(cur.trim());
-  return parts
-    .map((i) => i.toLowerCase().trim())
-    .filter((i) => i.length > 1 && i.length < 80);
+  if (cur.trim()) topParts.push(cur.trim());
+
+  const result: string[] = [];
+  for (const raw of topParts) {
+    const p = raw.toLowerCase().trim();
+    if (p.length <= 1) continue;
+    if (p.length < 80) {
+      result.push(p);
+    } else {
+      // Compound sub-ingredient string — extract base name + flatten sub-ingredients
+      // so nothing embedded (like "bha" inside "genoa salami (pork, ..., bha, ...)") is lost.
+      const parenIdx = p.indexOf('(');
+      if (parenIdx !== -1) {
+        const base = p.slice(0, parenIdx).replace(/[:/]/g, '').trim();
+        if (base.length > 1 && base.length < 80) result.push(base);
+        const lastParen = p.lastIndexOf(')');
+        const inner = p.slice(parenIdx + 1, lastParen !== -1 ? lastParen : undefined);
+        if (inner) result.push(...parseIngredientsArray(inner, _depth + 1));
+      }
+      // No parentheses but still > 80 chars — skip (free-text / label garbage)
+    }
+  }
+  return result;
 }
 
 // ─── Safety verdict derivation ────────────────────────────────────────────────
@@ -176,7 +200,7 @@ export async function fetchProductAnalysis(
     withTimeout(
       supabase.rpc('check_banned_ingredients_worldwide', {
         p_ingredients: ingredients,
-        p_country_code: 'US',
+        p_country_code: null, // null = all jurisdictions (US, EU, CA, GB, etc.)
       }),
       15_000,
     ),
