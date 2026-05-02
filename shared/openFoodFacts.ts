@@ -56,6 +56,9 @@ export type OffProductSnapshot = {
   imageLabelUrl?: string | null;
   // Category inferred from AI result or Supabase cache — used when route param is absent
   detectedCategory?: 'food' | 'skincare' | 'unknown';
+  // Data quality signals attached by validation layer in productCatalog
+  dataWarnings?: string[];
+  dataConfidence?: 'high' | 'medium' | 'low';
 };
 
 export type OffFetchResult =

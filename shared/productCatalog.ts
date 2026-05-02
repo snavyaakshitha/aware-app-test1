@@ -254,6 +254,62 @@ async function fetchOpenFdaDrugLabel(barcode: string): Promise<OffFetchResult | 
   return null;
 }
 
+// ─── Data quality validation ──────────────────────────────────────────────────
+
+const SUSPICIOUS_NON_FOOD_TERMS = [
+  'ethyl alcohol', 'isopropyl', 'hand sanitizer', 'benzalkonium',
+  'naphthylamine', 'industrial', 'motor oil', 'petroleum jelly ingredient',
+  'active: ethanol', 'inactive: water purified',
+];
+
+const COSMETICS_BARCODE_PREFIXES = ['200','201','202','203','204','205','206','207','208','209'];
+
+function validateProductPlausibility(
+  barcode: string,
+  product: OffProductSnapshot,
+): { plausible: boolean; confidence: 'high' | 'medium' | 'low'; warnings: string[] } {
+  const warnings: string[] = [];
+  let confidence: 'high' | 'medium' | 'low' = 'high';
+
+  // 1. Missing product name
+  if (!product.productName || product.productName === 'Unknown product') {
+    warnings.push('Product name missing — data may be incomplete.');
+    confidence = 'medium';
+  }
+
+  // 2. Ingredient count sanity
+  const ingCount = product.ingredientsText
+    ? product.ingredientsText.split(',').filter((s) => s.trim()).length
+    : 0;
+  if (ingCount === 0) {
+    warnings.push('No ingredients listed — verify on package.');
+    confidence = confidence === 'high' ? 'medium' : confidence;
+  }
+  if (ingCount > 60) {
+    warnings.push(`Unusual ingredient count (${ingCount}) — possible data error.`);
+    confidence = 'low';
+  }
+
+  // 3. Barcode prefix vs database source mismatch
+  const prefix3 = barcode.substring(0, 3);
+  if (COSMETICS_BARCODE_PREFIXES.includes(prefix3) && product.catalogSource === 'off') {
+    warnings.push('Barcode prefix suggests cosmetics but found in food database.');
+    confidence = 'low';
+  }
+
+  // 4. Suspicious non-food chemicals in ingredient text
+  const text = (product.ingredientsText ?? '').toLowerCase();
+  for (const term of SUSPICIOUS_NON_FOOD_TERMS) {
+    if (text.includes(term)) {
+      warnings.push(`Unexpected ingredient detected: "${term}" — verify this is the right product.`);
+      confidence = 'low';
+      break;
+    }
+  }
+
+  return { plausible: confidence !== 'low', confidence, warnings };
+}
+
 /**
  * Try Open Food Facts → Open Beauty Facts → Open Products Facts → USDA (if key) → openFDA.
  */
@@ -263,18 +319,25 @@ export async function fetchProductByBarcode(barcode: string): Promise<OffFetchRe
     return { ok: false, status: 400, message: 'Missing barcode' };
   }
 
+  function applyValidation(r: OffFetchResult): OffFetchResult {
+    if (!r.ok) return r;
+    const v = validateProductPlausibility(code, r.product);
+    if (v.warnings.length === 0) return r;
+    return { ok: true, product: { ...r.product, dataWarnings: v.warnings, dataConfidence: v.confidence } };
+  }
+
   for (const entry of OPEN_FACTS_CHAIN) {
     const base =
       entry.source === 'off' ? getOffBaseUrl() : entry.baseUrl ?? 'https://world.openfoodfacts.org';
     const r = await fetchOpenFactsStyle(base, code, entry.source, entry.label);
-    if (r.ok) return r;
+    if (r.ok) return applyValidation(r);
   }
 
   const usda = await fetchUsdaFdcProduct(code);
-  if (usda?.ok) return usda;
+  if (usda?.ok) return applyValidation(usda);
 
   const fda = await fetchOpenFdaDrugLabel(code);
-  if (fda?.ok) return fda;
+  if (fda?.ok) return applyValidation(fda);
 
   return {
     ok: false,

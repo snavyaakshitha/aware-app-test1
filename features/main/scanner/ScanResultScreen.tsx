@@ -36,6 +36,8 @@ import type { SkinCareAnalysisResult, ProductDetectionCategory, BannedIngredient
 import SkinSafetyTab from './tabs/SkinSafetyTab';
 import {
   fmtNum, inferNovaGroup, deriveOverallVerdict,
+  buildNutrientRows, generateHeadline, generateAwareTake,
+  generateVerdictSentence, inferProductSubCategory,
   buildNutrientRows, generateHeadline, generateAwareTake, getDecisionSummary,
   type OverallVerdict, type NutrientRow,
 } from '../../../shared/awaretake';
@@ -81,15 +83,18 @@ function openSafeUrl(url: string | null | undefined): void {
 // ─── Verdict ─────────────────────────────────────────────────────────────────
 
 const VERDICT_LABEL: Record<OverallVerdict, string> = {
-  avoid: 'Avoid', check: 'Check below', acceptable: 'No concerns', good: 'Good',
+  red: 'Avoid', yellow: 'Check below', green: 'Good choice',
 };
 const VERDICT_COLOR: Record<OverallVerdict, string> = {
+  red: '#ff4d4d', yellow: '#ffb830', green: '#2ed573',
   avoid: '#DC2626', check: '#D97706', acceptable: '#16A34A', good: '#15803D',
 };
 const VERDICT_BG: Record<OverallVerdict, string> = {
+  red: '#3d0a0a', yellow: '#2e2000', green: '#0a1f12',
   avoid: '#FEF2F2', check: '#FFFBEB', acceptable: '#F0FDF4', good: '#F0FDF4',
 };
 const VERDICT_BORDER: Record<OverallVerdict, string> = {
+  red: '#6b1a1a', yellow: '#5a3d00', green: '#1a5c30',
   avoid: '#FECACA', check: '#FDE68A', acceptable: '#BBF7D0', good: '#BBF7D0',
 };
 
@@ -989,9 +994,10 @@ function NutritionTab({
   const ns = off.nutriscoreGrade?.toLowerCase() ?? null;
   const nova = off.novaGroup;
   const effectiveNova = useMemo(() => inferNovaGroup(off), [off]);
+  const subCat = useMemo(() => inferProductSubCategory(off, effectiveNova), [off, effectiveNova]);
   const nutrientRows = useMemo(
-    () => nm ? buildNutrientRows(nm, effectiveNova) : [],
-    [nm, effectiveNova],
+    () => nm ? buildNutrientRows(nm, effectiveNova, subCat) : [],
+    [nm, effectiveNova, subCat],
   );
 
   return (
@@ -1287,6 +1293,10 @@ export default function ScanResultScreen({ route, navigation }: Props) {
       if (supabase) {
         const globalBanCount = analysis?.globalBans?.bannedIngredients.length ?? 0;
         const scanVerdict = analysis
+          ? (analysis.safety.allergenConflicts.length > 0 || analysis.bannedSubstances.length > 0 ? 'red'
+            : analysis.safety.avoidList.length > 0 || analysis.additives.severe.length > 0 ? 'red'
+            : analysis.safety.cautionList.length > 0 || analysis.additives.high.length > 0 ? 'yellow'
+            : 'green')
           ? (analysis.safety.allergenConflicts.length > 0 || analysis.bannedSubstances.length > 0 || globalBanCount > 0 ? 'avoid'
             : analysis.safety.avoidList.length > 0 || analysis.additives.severe.length > 0 ? 'avoid'
             : analysis.safety.cautionList.length > 0 || analysis.additives.high.length > 0 ? 'check'
@@ -1414,12 +1424,14 @@ export default function ScanResultScreen({ route, navigation }: Props) {
   const baseVerdict = analysis
     ? deriveOverallVerdict(analysis.safety, analysis.additives, banned, effectiveNova, off.nutriscoreGrade)
     : (() => {
-        if (effectiveNova === 1) return 'good' as const;
+        if (effectiveNova === 1) return 'green' as const;
         const ns = off.nutriscoreGrade?.toLowerCase();
-        if (ns === 'e' || ns === 'd') return 'check' as const;
-        if (ns === 'a' || ns === 'b') return 'good' as const;
-        return 'acceptable' as const;
+        if (ns === 'e' || ns === 'd') return 'yellow' as const;
+        return 'green' as const;
       })();
+  const verdictSentence = generateVerdictSentence(verdict, off, analysis, effectiveNova);
+  const dataMismatch = off.dataConfidence === 'low';
+  const hallucinationDetected = analysis?._hallucinationDetected === true;
   const verdict: OverallVerdict = (baseVerdict !== 'avoid' && globalBanIngredients.length > 0)
     ? 'avoid'
     : baseVerdict;
@@ -1444,9 +1456,39 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         </View>
       </View>
 
+      {/* Data mismatch warning — shown when barcode data quality is 'low' */}
+      {dataMismatch && (
+        <View style={{ marginHorizontal: s(16), marginBottom: s(8), backgroundColor: '#2e1500', borderRadius: s(10), borderWidth: 1, borderColor: '#5a3d00', padding: s(10) }}>
+          <Text style={{ color: '#ffb830', fontSize: s(12), fontWeight: '700', marginBottom: s(2) }}>⚠ Data quality warning</Text>
+          <Text style={{ color: '#aaa', fontSize: s(11), lineHeight: s(17) }}>
+            {(off.dataWarnings ?? []).join(' ')} Verify ingredients on the physical package before relying on this analysis.
+          </Text>
+        </View>
+      )}
+
+      {/* Hallucination warning — shown when AI ingredient extraction signals are suspicious */}
+      {hallucinationDetected && (
+        <View style={{ marginHorizontal: s(16), marginBottom: s(8), backgroundColor: '#2e2000', borderRadius: s(10), borderWidth: 1, borderColor: '#5a3d00', padding: s(10) }}>
+          <Text style={{ color: '#ffb830', fontSize: s(12), fontWeight: '700', marginBottom: s(2) }}>⚠ Unusual ingredient data</Text>
+          <Text style={{ color: '#aaa', fontSize: s(11), lineHeight: s(17) }}>
+            The ingredient data for this product looks unusual. Analysis has been suppressed for safety — please verify the ingredients on the physical package.
+          </Text>
+        </View>
+      )}
+
       {/* Verdict + mini scores + headline — food only */}
       {detectedCategory !== 'skincare' && (
         <View style={styles.verdictBlock}>
+          <View
+            style={[styles.pill, { backgroundColor: VERDICT_BG[verdict], borderColor: VERDICT_BORDER[verdict] }]}
+            accessibilityLabel={`Overall verdict: ${VERDICT_LABEL[verdict]}`}
+            accessibilityRole="text"
+          >
+            <View style={[styles.pillDot, { backgroundColor: VERDICT_COLOR[verdict] }]} />
+            <Text style={[styles.pillText, { color: VERDICT_COLOR[verdict] }]}>{VERDICT_LABEL[verdict]}</Text>
+          </View>
+          <Text style={styles.verdictSentence}>{verdictSentence}</Text>
+          <Text style={styles.verdictHeadline}>{headline}</Text>
           {/* Row 1: verdict pill + NS badge + NOVA badge */}
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(6), marginBottom: s(8), flexWrap: 'wrap' }}>
             <View
@@ -1661,6 +1703,12 @@ const styles = StyleSheet.create({
   heroBarcode: { fontSize: s(10), color: '#CCCCCC' },
 
   verdictBlock: { paddingHorizontal: s(16), paddingBottom: s(12) },
+  pill:       { flexDirection: 'row', alignItems: 'center', gap: s(8), alignSelf: 'flex-start', paddingHorizontal: s(16), paddingVertical: s(10), borderRadius: s(100), borderWidth: 1.5, marginBottom: s(10), minHeight: s(44) },
+  pillDot:    { width: s(10), height: s(10), borderRadius: s(5) },
+  pillText:   { fontSize: s(18), fontWeight: '800', letterSpacing: 0.3 },
+  verdictSentence: { fontSize: s(14), color: '#ccc', lineHeight: s(21), marginBottom: s(6) },
+  verdictHeadline: { fontSize: s(17), fontWeight: '700', color: '#fff', lineHeight: s(24) },
+  aiDisclaimer: { fontSize: s(11), color: '#666', marginTop: s(6) },
   pill:       { flexDirection: 'row', alignItems: 'center', gap: s(6), alignSelf: 'flex-start', paddingHorizontal: s(12), paddingVertical: s(5), borderRadius: s(100), borderWidth: 1.5, marginBottom: s(8) },
   pillDot:    { width: s(7), height: s(7), borderRadius: s(4) },
   pillText:   { fontSize: s(13), fontWeight: '700' },
