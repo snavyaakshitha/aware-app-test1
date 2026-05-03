@@ -9,6 +9,8 @@ import * as Linking from 'expo-linking';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Font from 'expo-font';
+import { Feather, AntDesign, Ionicons, FontAwesome5 } from '@expo/vector-icons';
 
 import SplashScreen from './features/splash-screen/SplashScreen';
 import SignInScreen from './features/sign-in/SignInScreen';
@@ -31,6 +33,12 @@ type AppScreen = 'splash' | 'signin' | 'onboarding' | 'main';
 
 export default function App() {
   const [screen, setScreen] = useState<AppScreen>('splash');
+  const [fontsLoaded, fontError] = Font.useFonts({
+    ...Feather.font,
+    ...AntDesign.font,
+    ...Ionicons.font,
+    ...FontAwesome5.font,
+  });
   const [splashDone, setSplashDone] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
 
@@ -126,6 +134,12 @@ export default function App() {
     }
   }, [goAfterAuth, goToMainAfterAuth]);
 
+  // Block render only while fonts are actively loading.
+  // If they error (404 on web) we still show the app — icons may degrade but nothing freezes.
+  if (!fontsLoaded && !fontError) {
+    return <View style={styles.root} />;
+  }
+
   return (
     <SafeAreaProvider>
       <View style={styles.root}>
@@ -160,6 +174,6 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: Colors.canvasDark,
+    backgroundColor: Colors.canvas,
   },
 });

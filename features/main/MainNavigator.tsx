@@ -1,7 +1,7 @@
 /**
  * Aware — MainNavigator
- * Bottom tab navigator: Home | Scan | Lists | Profile
- * Each tab has its own native stack navigator.
+ * Bottom tab navigator: Home | Search | Scan (center) | Awarenews | Profile
+ * v4 design: 5 tabs, teal accent, center scan button raised -20.
  */
 import React from 'react';
 import { View } from 'react-native';
@@ -9,11 +9,10 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Feather, Ionicons } from '@expo/vector-icons';
 
-import { Colors, s, Radius } from '../../shared/theme';
+import { Colors, s } from '../../shared/theme';
 import type {
   HomeStackParamList,
   ScannerStackParamList,
-  ListsStackParamList,
   ProfileStackParamList,
 } from '../../shared/types';
 
@@ -28,19 +27,20 @@ import ScannerScreen from './scanner/ScannerScreen';
 import ScanResultScreen from './scanner/ScanResultScreen';
 import AIFallbackScreen from './scanner/AIFallbackScreen';
 
-// Lists stack
-import ListsScreen from './lists/ListsScreen';
-import ListDetailScreen from './lists/ListDetailScreen';
 
 // Profile stack
 import ProfileScreen from './profile/ProfileScreen';
 import EditPreferencesScreen from './profile/EditPreferencesScreen';
 
+// Awarenews
+import AwarenewsScreen from './news/AwarenewsScreen';
+
 // ─── Stack navigators ──────────────────────────────────────────────────────────
 const HomeStack = createNativeStackNavigator<HomeStackParamList>();
 const ScannerStack = createNativeStackNavigator<ScannerStackParamList>();
-const ListsStack = createNativeStackNavigator<ListsStackParamList>();
 const ProfileStack = createNativeStackNavigator<ProfileStackParamList>();
+const SearchStack = createNativeStackNavigator<HomeStackParamList>();
+const AwarenewsStack = createNativeStackNavigator();
 
 function HomeStackNavigator() {
   return (
@@ -50,6 +50,21 @@ function HomeStackNavigator() {
       <HomeStack.Screen name="SearchResults" component={SearchResultsScreen} />
       <HomeStack.Screen name="ProductDetail" component={ProductDetailScreen} />
     </HomeStack.Navigator>
+  );
+}
+
+function SearchStackNavigator() {
+  return (
+    <SearchStack.Navigator screenOptions={{ headerShown: false }}>
+      <SearchStack.Screen
+        name="Home"
+        component={HomeScreen}
+        initialParams={undefined}
+      />
+      <SearchStack.Screen name="Store" component={StoreScreen} />
+      <SearchStack.Screen name="SearchResults" component={SearchResultsScreen} />
+      <SearchStack.Screen name="ProductDetail" component={ProductDetailScreen} />
+    </SearchStack.Navigator>
   );
 }
 
@@ -63,12 +78,11 @@ function ScannerStackNavigator() {
   );
 }
 
-function ListsStackNavigator() {
+function AwarenewsStackNavigator() {
   return (
-    <ListsStack.Navigator screenOptions={{ headerShown: false }}>
-      <ListsStack.Screen name="Lists" component={ListsScreen} />
-      <ListsStack.Screen name="ListDetail" component={ListDetailScreen} />
-    </ListsStack.Navigator>
+    <AwarenewsStack.Navigator screenOptions={{ headerShown: false }}>
+      <AwarenewsStack.Screen name="Awarenews" component={AwarenewsScreen} />
+    </AwarenewsStack.Navigator>
   );
 }
 
@@ -90,15 +104,20 @@ export default function MainNavigator() {
       screenOptions={{
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: Colors.canvasDark,
-          borderTopColor: Colors.border,
+          backgroundColor: 'white',
+          borderTopColor: 'rgba(0,0,0,0.07)',
           borderTopWidth: 1,
-          height: s(80),
-          paddingBottom: s(12),
-          paddingTop: s(6),
+          height: s(84),
+          paddingBottom: s(16),
+          paddingTop: s(8),
+          elevation: 12,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: -4 },
+          shadowOpacity: 0.06,
+          shadowRadius: 20,
         },
         tabBarActiveTintColor: Colors.accent,
-        tabBarInactiveTintColor: 'rgba(255,255,255,0.45)',
+        tabBarInactiveTintColor: '#8C9299',
         tabBarLabelStyle: {
           fontSize: s(11),
           fontWeight: '500',
@@ -106,61 +125,80 @@ export default function MainNavigator() {
         },
       }}
     >
+      {/* 1 — Home */}
       <Tab.Screen
         name="HomeTab"
         component={HomeStackNavigator}
         options={{
           tabBarLabel: 'Home',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="home" color={color} size={size ?? s(22)} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="home" color={color} size={s(22)} />
           ),
         }}
       />
+
+      {/* 2 — Search */}
+      <Tab.Screen
+        name="SearchTab"
+        component={SearchStackNavigator}
+        options={{
+          tabBarLabel: 'Search',
+          tabBarIcon: ({ color }) => (
+            <Feather name="search" color={color} size={s(22)} />
+          ),
+        }}
+      />
+
+      {/* 3 — Scan (center, raised) */}
       <Tab.Screen
         name="ScanTab"
         component={ScannerStackNavigator}
         options={{
           tabBarLabel: 'Scan',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ focused }) => (
             <View
               style={{
-                width: s(48),
-                height: s(48),
-                borderRadius: Radius.pill,
-                backgroundColor: focused ? Colors.accent : Colors.canvasMid,
+                width: s(56),
+                height: s(56),
+                borderRadius: s(999),
+                backgroundColor: Colors.accent,
                 alignItems: 'center',
                 justifyContent: 'center',
-                marginBottom: s(8),
-                borderWidth: focused ? 0 : 1,
-                borderColor: Colors.border,
+                marginTop: -s(20),
               }}
             >
-              <Ionicons
-                name="barcode-outline"
-                color={focused ? Colors.canvasDark : color}
-                size={s(24)}
-              />
+              <Ionicons name="barcode-outline" color="white" size={s(24)} />
             </View>
           ),
+          tabBarLabelStyle: {
+            fontSize: s(11),
+            fontWeight: '500',
+            color: Colors.accent,
+            marginTop: s(2),
+          },
         }}
       />
+
+      {/* 4 — Awarenews */}
       <Tab.Screen
-        name="ListsTab"
-        component={ListsStackNavigator}
+        name="AwarenewsTab"
+        component={AwarenewsStackNavigator}
         options={{
-          tabBarLabel: 'Lists',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="list" color={color} size={size ?? s(22)} />
+          tabBarLabel: 'Awarenews',
+          tabBarIcon: ({ color }) => (
+            <Feather name="file-text" color={color} size={s(22)} />
           ),
         }}
       />
+
+      {/* 5 — Profile */}
       <Tab.Screen
         name="ProfileTab"
         component={ProfileStackNavigator}
         options={{
           tabBarLabel: 'Profile',
-          tabBarIcon: ({ color, size }) => (
-            <Feather name="user" color={color} size={size ?? s(22)} />
+          tabBarIcon: ({ color }) => (
+            <Feather name="user" color={color} size={s(22)} />
           ),
         }}
       />
