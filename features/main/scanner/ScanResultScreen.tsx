@@ -253,6 +253,140 @@ function parseIngredientsList(text: string): string[] {
     .map((p) => p.replace(/\s+/g, ' ').trim());
 }
 
+// ─── Effective category inference ─────────────────────────────────────────────
+
+type EffectiveCategory =
+  | 'food' | 'supplement'
+  | 'skincare' | 'haircare' | 'makeup' | 'baby'
+  | 'household'
+  | 'pet' | 'unknown';
+
+function inferEffectiveCategory(
+  productName: string,
+  brand: string,
+  detected: ProductDetectionCategory,
+): EffectiveCategory {
+  if (detected === 'food') return 'food';
+
+  const n = `${productName} ${brand}`.toLowerCase();
+
+  // Household / cleaning — must NOT receive food or skincare analysis
+  if (/\b(cleaner|cleaning|disinfect|bleach|detergent|laundry|dishwash|dishwasher|surface spray|bathroom cleaner|toilet cleaner|fabric softener|dryer sheet|window cleaner|glass cleaner|oven cleaner|floor cleaner|all-purpose cleaner|multipurpose cleaner|sanitiz|sanitiser|hand sanitizer|hand sanitiser)\b/.test(n)) {
+    return 'household';
+  }
+
+  // Hair care — runs skincare RPC but hair-focused display
+  if (/\b(shampoo|conditioner|hair mask|hair oil|dry shampoo|hair serum|hair treatment|scalp|hair color|hair colour|hair dye|hair wax|pomade|hair gel|hair spray|hairspray|heat protectant|leave-in|leave in conditioner)\b/.test(n)) {
+    return 'haircare';
+  }
+
+  // Makeup / cosmetics
+  if (/\b(foundation|mascara|lipstick|lip gloss|lip liner|eyeshadow|eye shadow|eyeliner|blush|bronzer|concealer|primer|setting spray|bb cream|cc cream|tinted moisturizer|cosmetic|highlighter|contour)\b/.test(n)) {
+    return 'makeup';
+  }
+
+  // Baby / infant
+  if (/\b(baby wash|baby lotion|baby shampoo|baby oil|baby powder|nappy cream|diaper cream|infant|newborn care|cradle cap)\b/.test(n)) {
+    return 'baby';
+  }
+
+  // Dietary supplements — food analysis is appropriate
+  if (/\b(vitamin|supplement|capsule|tablet|softgel|protein powder|probiotic|omega|collagen|whey|multivitamin|gummy vitamin|dietary supplement|herbal supplement)\b/.test(n)) {
+    return 'supplement';
+  }
+
+  // Pet food / pet care
+  if (/\b(dog food|cat food|pet food|kibble|puppy food|kitten food|bird food|fish food|aquarium|paw balm|pet shampoo)\b/.test(n)) {
+    return 'pet';
+  }
+
+  // OBF database confirmed it as personal care
+  if (detected === 'skincare') return 'skincare';
+
+  return 'unknown';
+}
+
+// ─── Household product view ───────────────────────────────────────────────────
+
+const HOUSEHOLD_TIPS = [
+  'Keep out of reach of children and pets',
+  'Avoid contact with eyes and skin where indicated on the label',
+  'Use in a well-ventilated area',
+  'Never mix different cleaning chemicals',
+  'Follow label instructions for safe storage and disposal',
+];
+
+function HouseholdProductView({ off }: { off: OffProductSnapshot }) {
+  return (
+    <>
+      <View style={styles.sectionBlock}>
+        <View style={styles.householdBanner}>
+          <Ionicons name="warning-outline" size={s(22)} color="#FF9500" />
+          <View style={{ flex: 1 }}>
+            <Text style={styles.householdBannerTitle}>Household / Cleaning Product</Text>
+            <Text style={styles.householdBannerSub}>
+              Not a food or personal care product — nutritional and skincare scoring does not apply.
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      {!!off.ingredientsText?.trim() && (
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>INGREDIENTS / COMPONENTS</Text>
+          <View style={styles.card}>
+            <Text style={{ fontSize: s(13), color: '#374151', lineHeight: s(21) }}>
+              {off.ingredientsText}
+            </Text>
+          </View>
+        </View>
+      )}
+
+      <View style={styles.sectionBlock}>
+        <Text style={styles.sectionTitle}>SAFE HANDLING</Text>
+        <View style={styles.card}>
+          {HOUSEHOLD_TIPS.map((tip, i) => (
+            <View
+              key={i}
+              style={[styles.householdTipRow, i > 0 && { borderTopWidth: 1, borderTopColor: '#F4F4F0' }]}
+            >
+              <Ionicons name="shield-checkmark-outline" size={s(15)} color="#FF9500" />
+              <Text style={styles.householdTipText}>{tip}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </>
+  );
+}
+
+// ─── Basic ingredient view (unknown / pet products) ───────────────────────────
+
+function BasicIngredientView({ off }: { off: OffProductSnapshot }) {
+  return (
+    <>
+      <View style={styles.sectionBlock}>
+        <View style={styles.unknownBanner}>
+          <Ionicons name="information-circle-outline" size={s(20)} color="#6B7280" />
+          <Text style={styles.unknownBannerText}>
+            Detailed safety analysis is not yet available for this product category.
+          </Text>
+        </View>
+      </View>
+      {!!off.ingredientsText?.trim() && (
+        <View style={styles.sectionBlock}>
+          <Text style={styles.sectionTitle}>INGREDIENTS</Text>
+          <View style={styles.card}>
+            <Text style={{ fontSize: s(13), color: '#374151', lineHeight: s(21) }}>
+              {off.ingredientsText}
+            </Text>
+          </View>
+        </View>
+      )}
+    </>
+  );
+}
+
 // ─── Allergen detection via RPC allergenMatches (no local keyword arrays) ─────
 
 function getIngredientAllergen(
@@ -1504,7 +1638,9 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         return;
       }
 
-      const isSkincare = detectedCategory === 'skincare';
+      const effectiveCat = inferEffectiveCategory(snapshot.productName, snapshot.brand ?? '', detectedCategory);
+      const isSkincare = ['skincare', 'haircare', 'makeup', 'baby'].includes(effectiveCat);
+      const isFood = effectiveCat === 'food' || effectiveCat === 'supplement';
       const conditions = ((prefs?.healthConditions as string[] | undefined) ?? []);
 
       let analysis: ProductAnalysisResult | null = null;
@@ -1513,7 +1649,7 @@ export default function ScanResultScreen({ route, navigation }: Props) {
 
       if (isSkincare) {
         skincareAnalysis = await fetchSkinCareAnalysis(snapshot.ingredientsText, userId).catch(() => null);
-      } else {
+      } else if (isFood) {
         try {
           analysis = await fetchProductAnalysis(barcode, userId, snapshot.ingredientsText, detectedCategory);
           if (analysis === null) analysisFailureReason = 'unavailable';
@@ -1522,9 +1658,9 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         }
       }
 
-      const aiSummary = isSkincare ? null : await fetchAISummary(
+      const aiSummary = isFood ? await fetchAISummary(
         barcode, userId, snapshot.productName, snapshot.ingredientsText, conditions,
-      ).catch(() => null);
+      ).catch(() => null) : null;
 
       let lastScannedAt: string | null = null;
       if (supabase && userId) {
@@ -1722,7 +1858,11 @@ export default function ScanResultScreen({ route, navigation }: Props) {
         return 'green' as const;
       })();
 
-  const isSkincare = detectedCategory === 'skincare';
+  const effectiveCategory = inferEffectiveCategory(off.productName, off.brand ?? '', detectedCategory);
+  const isSkinCareGroup = ['skincare', 'haircare', 'makeup', 'baby'].includes(effectiveCategory);
+  const isHousehold = effectiveCategory === 'household';
+  const isFood = effectiveCategory === 'food' || effectiveCategory === 'supplement';
+  const isSkincare = isSkinCareGroup; // kept for VerdictHero compat
   const hasIngredients = !!off.ingredientsText?.trim();
 
   return (
@@ -1748,18 +1888,27 @@ export default function ScanResultScreen({ route, navigation }: Props) {
           onNOVAPress={() => setInfoModal('nova')}
         />
 
-        {/* Skincare: show SkinSafetyTab inline */}
-        {isSkincare && skincareAnalysis && (
+        {/* ── Personal care (skin / hair / makeup / baby) ─────────────────── */}
+        {isSkinCareGroup && skincareAnalysis && (
           <SkinSafetyTab
             analysis={skincareAnalysis}
             skinType={state.prefs?.skin_type}
             skinConcerns={state.prefs?.skin_concerns}
             productName={off.productName}
+            ingredientsText={off.ingredientsText}
           />
         )}
 
-        {/* For non-skincare products: full analysis layout */}
-        {!isSkincare && (
+        {/* ── Household / cleaning products ────────────────────────────────── */}
+        {isHousehold && <HouseholdProductView off={off} />}
+
+        {/* ── Pet / unknown category ───────────────────────────────────────── */}
+        {!isSkinCareGroup && !isHousehold && !isFood && (
+          <BasicIngredientView off={off} />
+        )}
+
+        {/* ── Food & supplements: full analysis layout ─────────────────────── */}
+        {isFood && (
           <>
             {/* 2. For You */}
             <ForYouSection analysis={analysis} userId={userId} />
@@ -2055,4 +2204,15 @@ const styles = StyleSheet.create({
 
   // Retry
   retryBtn:     { marginTop: s(16), paddingHorizontal: s(24), paddingVertical: s(12), backgroundColor: '#F4F4F0', borderRadius: s(14) },
+
+  // Household product view
+  householdBanner: { flexDirection: 'row', alignItems: 'flex-start', gap: s(12), backgroundColor: '#FFF4D9', borderRadius: s(14), padding: s(16), borderWidth: 1, borderColor: 'rgba(255,149,0,0.25)' },
+  householdBannerTitle: { fontSize: s(14), fontWeight: '700', color: '#101418', marginBottom: s(3) },
+  householdBannerSub: { fontSize: s(12), color: '#6B7280', lineHeight: s(18) },
+  householdTipRow: { flexDirection: 'row', alignItems: 'flex-start', gap: s(10), paddingVertical: s(10) },
+  householdTipText: { flex: 1, fontSize: s(13), color: '#374151', lineHeight: s(20) },
+
+  // Unknown / basic product view
+  unknownBanner: { flexDirection: 'row', alignItems: 'center', gap: s(10), backgroundColor: '#F9FAFB', borderRadius: s(14), padding: s(14), borderWidth: 1, borderColor: '#E5E7EB' },
+  unknownBannerText: { flex: 1, fontSize: s(13), color: '#6B7280', lineHeight: s(19) },
 });

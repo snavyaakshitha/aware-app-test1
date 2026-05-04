@@ -291,6 +291,51 @@ async function fetchOpenFdaDrugLabel(barcode: string): Promise<OffFetchResult | 
   return null;
 }
 
+// ─── UPC Item DB (trial — 100 lookups/day, no API key required) ──────────────
+
+async function fetchUpcItemDb(barcode: string): Promise<OffFetchResult | null> {
+  const url = `https://api.upcitemdb.com/prod/trial/lookup?upc=${encodeURIComponent(barcode)}`;
+  try {
+    const res = await fetch(url, {
+      headers: { Accept: 'application/json', 'User-Agent': UA },
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as {
+      code?: string;
+      items?: Array<{
+        title?: string;
+        brand?: string;
+        description?: string;
+        images?: string[];
+        ingredients?: string;
+        category?: string;
+      }>;
+    };
+    if (json.code !== 'OK' || !json.items?.length) return null;
+    const item = json.items[0];
+    if (!item.title) return null;
+
+    const product: OffProductSnapshot = {
+      code: barcode,
+      productName: item.title,
+      brand: item.brand ?? 'Unknown brand',
+      imageUrl: item.images?.[0] ?? null,
+      ingredientsText: item.ingredients ?? '',
+      allergensTags: [],
+      tracesTags: [],
+      nutriscoreGrade: null,
+      novaGroup: null,
+      ingredientsAnalysisTags: [],
+      nutriments: null,
+      catalogSource: 'upcitemdb',
+      catalogSourceLabel: 'UPC Item Database',
+    };
+    return { ok: true, product };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Data quality validation ──────────────────────────────────────────────────
 
 const SUSPICIOUS_NON_FOOD_TERMS = [
@@ -389,6 +434,10 @@ export async function fetchProductByBarcode(barcode: string): Promise<OffFetchRe
   // 4. openFDA drug labels (OTC medications, drug-food crossovers)
   const fda = await fetchOpenFdaDrugLabel(code);
   if (fda?.ok) return applyValidation(fda);
+
+  // 5. UPC Item DB — broad general product catalogue (trial: 100 req/day, no key)
+  const upcdb = await fetchUpcItemDb(code);
+  if (upcdb?.ok) return applyValidation(upcdb);
 
   return {
     ok: false,
@@ -501,21 +550,96 @@ export async function detectProductCategory(barcode: string): Promise<'food' | '
   return 'food';
 }
 
+// ─── OBF name-search enrichment ───────────────────────────────────────────────
+
+/**
+ * Simple name-similarity score: what fraction of words in `query` appear in `candidate`.
+ * Returns 0–1. Used to filter out clearly unrelated search hits.
+ */
+function nameSimilarity(query: string, candidate: string): number {
+  const qWords = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  if (!qWords.length) return 0;
+  const cLower = candidate.toLowerCase();
+  const matches = qWords.filter((w) => cLower.includes(w)).length;
+  return matches / qWords.length;
+}
+
+/**
+ * Search Open Beauty Facts by product name and return the best-matching full product,
+ * or null if no sufficiently similar result is found.
+ *
+ * Minimum similarity threshold (0.5) means at least half the meaningful words in
+ * `productName` must appear in the OBF hit's name — guards against false positives
+ * for generic names like "Moisturizer".
+ */
+async function fetchObfByName(
+  productName: string,
+  brand?: string | null,
+): Promise<OffFetchResult | null> {
+  const query = [productName, brand].filter(Boolean).join(' ').trim();
+  if (query.length < 4) return null;
+
+  const OBF_BASE = 'https://world.openbeautyfacts.org';
+
+  const hits = await searchOpenFactsPl(OBF_BASE, query);
+  if (!hits.length) return null;
+
+  // Score each hit by name similarity (brand match is a bonus)
+  const scored = hits
+    .map((h) => {
+      let score = nameSimilarity(productName, h.productName);
+      if (brand && h.brand && h.brand.toLowerCase().includes(brand.toLowerCase())) {
+        score += 0.3; // boost for brand match
+      }
+      return { hit: h, score };
+    })
+    .filter(({ score }) => score >= 0.5)
+    .sort((a, b) => b.score - a.score);
+
+  if (!scored.length) return null;
+
+  // Fetch full product data for the top match
+  const best = scored[0].hit;
+  return fetchOpenFactsStyle(OBF_BASE, best.code, 'obf', 'Open Beauty Facts (name match)');
+}
+
 /**
  * Fetch product by barcode with automatic category detection.
  * Routes to OBF for skincare, OFF chain for food.
+ *
+ * Cross-DB enrichment: if the barcode is found in a non-OBF source but the
+ * product looks like personal care, we also try an OBF text-search by name so
+ * that skincare-specific data (OBF categories, INCI ingredient list) is used
+ * when available.
  */
 export async function fetchProductWithCategory(barcode: string): Promise<OffFetchResult> {
   const category = await detectProductCategory(barcode);
 
   if (category === 'skincare') {
-    // Try OBF specifically
+    // 1. Try OBF by exact barcode first (fastest, most accurate)
     const base = 'https://world.openbeautyfacts.org';
     const r = await fetchOpenFactsStyle(base, barcode, 'obf', 'Open Beauty Facts');
     if (r.ok) return r;
-    // Fall back to other sources if OBF fails
   }
 
-  // Food or fallback: use standard chain
-  return fetchProductByBarcode(barcode);
+  // 2. Fall back to the full standard chain (USDA → OFF → OBF → OPF → FDA → UPC Item DB)
+  const fallback = await fetchProductByBarcode(barcode);
+
+  // 3. Cross-DB enrichment: if found elsewhere with a usable name, try OBF text-search
+  //    to get a potentially richer / skincare-tagged version of the same product.
+  if (
+    fallback.ok &&
+    category === 'skincare' &&
+    fallback.product.catalogSource !== 'obf' &&
+    fallback.product.productName &&
+    fallback.product.productName !== 'Unknown product'
+  ) {
+    const obfByName = await fetchObfByName(
+      fallback.product.productName,
+      fallback.product.brand,
+    );
+    if (obfByName?.ok) return obfByName;
+  }
+
+  return fallback;
 }

@@ -6,6 +6,7 @@ export type ProductCatalogSource =
   | 'off' | 'obf' | 'opf'
   | 'usda_fdc'
   | 'openfda'
+  | 'upcitemdb'
   | 'ai_gemini'
   | 'ai_gpt'
   | 'supabase_cache';

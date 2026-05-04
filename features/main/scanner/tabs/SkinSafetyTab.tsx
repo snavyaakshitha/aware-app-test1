@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,7 @@ interface Props {
   skinType?: SkinType | null;
   skinConcerns?: SkinConcern[];
   productName: string;
+  ingredientsText?: string;
 }
 
 // ─── Label maps ───────────────────────────────────────────────────────────────
@@ -183,6 +184,173 @@ function getPersonalizedFlags(
     }));
 }
 
+// ─── Ingredient text utilities ────────────────────────────────────────────────
+
+function parseSimpleIngredients(text: string): string[] {
+  if (!text?.trim()) return [];
+  const parts: string[] = [];
+  let cur = '';
+  let depth = 0;
+  for (const ch of text) {
+    if (ch === '(') depth++;
+    else if (ch === ')') depth--;
+    else if ((ch === ',' || ch === ';') && depth === 0) {
+      if (cur.trim()) parts.push(cur.trim());
+      cur = '';
+      continue;
+    }
+    cur += ch;
+  }
+  if (cur.trim()) parts.push(cur.trim());
+  return parts.filter((p) => p.length > 0).map((p) => p.replace(/\s+/g, ' ').trim());
+}
+
+type TextSegment = { text: string; color: string | null };
+
+function segmentIngredientText(raw: string, flagged: SkincareIngredientFlag[]): TextSegment[] {
+  if (!raw?.trim() || !flagged?.length) return [{ text: raw, color: null }];
+
+  const rawLower = raw.toLowerCase();
+  type RangeMatch = { start: number; end: number; color: string };
+  const matches: RangeMatch[] = [];
+  const used: [number, number][] = [];
+
+  // Longest names first to avoid partial shadowing
+  const sorted = [...flagged].sort((a, b) => b.ingredient.length - a.ingredient.length);
+
+  for (const f of sorted) {
+    const nameLower = f.ingredient.toLowerCase();
+    let from = 0;
+    while (from < rawLower.length) {
+      const idx = rawLower.indexOf(nameLower, from);
+      if (idx === -1) break;
+      const end = idx + nameLower.length;
+      const overlaps = used.some(([s, e]) => idx < e && end > s);
+      if (!overlaps) {
+        // Colour by severity: severe/high → orange-red, medium/low → amber
+        const color = f.concern_level === 'severe' || f.concern_level === 'high'
+          ? '#FF9500'
+          : '#C98200';
+        matches.push({ start: idx, end, color });
+        used.push([idx, end]);
+      }
+      from = end;
+    }
+  }
+
+  matches.sort((a, b) => a.start - b.start);
+
+  const segments: TextSegment[] = [];
+  let pos = 0;
+  for (const m of matches) {
+    if (m.start > pos) segments.push({ text: raw.slice(pos, m.start), color: null });
+    segments.push({ text: raw.slice(m.start, m.end), color: m.color });
+    pos = m.end;
+  }
+  if (pos < raw.length) segments.push({ text: raw.slice(pos), color: null });
+
+  return segments;
+}
+
+// ─── WhatsInsideSection ───────────────────────────────────────────────────────
+
+function WhatsInsideSection({ ingredientsText, flagged }: {
+  ingredientsText: string;
+  flagged: SkincareIngredientFlag[];
+}) {
+  const segments = useMemo(
+    () => segmentIngredientText(ingredientsText, flagged),
+    [ingredientsText, flagged],
+  );
+
+  return (
+    <View style={styles.whatsInsideSection}>
+      <Text style={styles.whatsInsideTitle}>What's Inside</Text>
+      <View style={styles.whatsInsideCard}>
+        <Text style={styles.labelText}>
+          {segments.map((seg, i) => (
+            <Text
+              key={i}
+              style={seg.color ? { color: seg.color, fontFamily: Font.bold } : undefined}
+            >
+              {seg.text}
+            </Text>
+          ))}
+        </Text>
+      </View>
+      {flagged.length > 0 && (
+        <View style={styles.labelLegend}>
+          <View style={styles.labelLegendDot} />
+          <Text style={styles.labelLegendText}>
+            Highlighted ingredients are flagged — see details below
+          </Text>
+        </View>
+      )}
+      <View style={styles.concentrationNote}>
+        <Text style={styles.concentrationNoteText}>
+          As a rule, the higher the ingredient is on the label, the higher its concentration in the product.
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── CleanIngredientRow ───────────────────────────────────────────────────────
+
+function CleanIngredientRow({ name }: { name: string }) {
+  return (
+    <View style={styles.cleanIngRow}>
+      <View style={styles.ingredientMeta}>
+        {/* Name in normal dark text — no dot/circle */}
+        <Text style={styles.ingredientName}>{name}</Text>
+        <Text style={styles.cleanRiskText}>No risk</Text>
+      </View>
+    </View>
+  );
+}
+
+// ─── AllIngredientsSection ────────────────────────────────────────────────────
+
+function AllIngredientsSection({ ingredientsText, flagged }: {
+  ingredientsText: string;
+  flagged: SkincareIngredientFlag[];
+}) {
+  const allNames = useMemo(() => parseSimpleIngredients(ingredientsText), [ingredientsText]);
+
+  const ingredientItems = useMemo(() => allNames.map((name) => {
+    const nameLower = name.toLowerCase();
+    const flagEntry = flagged.find((f) => {
+      const fl = f.ingredient.toLowerCase();
+      return nameLower.includes(fl) || fl.includes(nameLower);
+    });
+    return { name, flagEntry: flagEntry ?? null };
+  }), [allNames, flagged]);
+
+  if (!ingredientItems.length) return null;
+
+  const flaggedCount = ingredientItems.filter((i) => i.flagEntry).length;
+  const cleanCount = ingredientItems.length - flaggedCount;
+
+  return (
+    <View style={styles.section}>
+      <View style={styles.allIngHeader}>
+        <Text style={styles.sectionTitle}>Ingredients</Text>
+        <Text style={styles.allIngCount}>{ingredientItems.length} total</Text>
+      </View>
+      {flaggedCount > 0 && (
+        <Text style={styles.sectionSub}>
+          {flaggedCount} flagged · {cleanCount} clean — tap flagged for details &amp; sources
+        </Text>
+      )}
+      {ingredientItems.map(({ name, flagEntry }, i) =>
+        flagEntry
+          ? <IngredientCard key={`${name}-${i}`} item={flagEntry} />
+          : <CleanIngredientRow key={`${name}-${i}`} name={name} />,
+      )}
+    </View>
+  );
+}
+
 // ─── IngredientCard ───────────────────────────────────────────────────────────
 
 function IngredientCard({ item }: { item: SkincareIngredientFlag }) {
@@ -197,21 +365,22 @@ function IngredientCard({ item }: { item: SkincareIngredientFlag }) {
   return (
     <Pressable onPress={() => setExpanded((v) => !v)} style={styles.ingredientCard}>
       <View style={styles.ingredientHeader}>
-        <View style={[styles.severityDot, { backgroundColor: color }]} />
         <View style={styles.ingredientMeta}>
-          <Text style={styles.ingredientName}>{item.ingredient}</Text>
-          <View style={styles.tagRow}>
-            <View style={[styles.severityTag, { borderColor: color }]}>
-              <Text style={[styles.severityTagText, { color }]}>
-                {SEVERITY_LABEL[item.concern_level]}
-              </Text>
+          {/* Name in the severity colour — no dot/circle */}
+          <Text style={[styles.ingredientName, { color }]}>{item.ingredient}</Text>
+          {/* Risk level label below the name, same colour */}
+          <Text style={[styles.riskLevelLabel, { color }]}>
+            {SEVERITY_LABEL[item.concern_level]} risk
+          </Text>
+          {concernLabels.length > 0 && (
+            <View style={styles.tagRow}>
+              {concernLabels.map((label) => (
+                <View key={label} style={styles.concernTag}>
+                  <Text style={styles.concernTagText}>{label}</Text>
+                </View>
+              ))}
             </View>
-            {concernLabels.map((label) => (
-              <View key={label} style={styles.concernTag}>
-                <Text style={styles.concernTagText}>{label}</Text>
-              </View>
-            ))}
-          </View>
+          )}
         </View>
         <Feather
           name={expanded ? 'chevron-up' : 'chevron-down'}
@@ -309,7 +478,7 @@ function getChecksForSubType(subType: SkincareSubType): string[] {
 
 // ─── Main tab ─────────────────────────────────────────────────────────────────
 
-export default function SkinSafetyTab({ analysis, skinType, skinConcerns, productName }: Props) {
+export default function SkinSafetyTab({ analysis, skinType, skinConcerns, productName, ingredientsText }: Props) {
   const isClean   = analysis.verdict === 'clean';
   const flagged   = analysis.flagged_ingredients ?? [];
   const severe    = flagged.filter((f) => f.concern_level === 'severe');
@@ -364,6 +533,11 @@ export default function SkinSafetyTab({ analysis, skinType, skinConcerns, produc
         <Text style={styles.awaresTakeText}>{awaresTake}</Text>
       </View>
 
+      {/* ── What's Inside — label-style inline coloured text ─────────────── */}
+      {!!ingredientsText?.trim() && (
+        <WhatsInsideSection ingredientsText={ingredientsText} flagged={flagged} />
+      )}
+
       {/* ── For Your Skin (personalized) ─────────────────────────────────── */}
       {hasProfile && personalFlags.length > 0 && (
         <View style={styles.forYourSkin}>
@@ -391,12 +565,14 @@ export default function SkinSafetyTab({ analysis, skinType, skinConcerns, produc
         </View>
       )}
 
-      {/* ── Flagged ingredients list ──────────────────────────────────────── */}
-      {flagged.length > 0 && (
+      {/* ── Ingredients — all (flagged + clean) when label text is available */}
+      {!!ingredientsText?.trim() ? (
+        <AllIngredientsSection ingredientsText={ingredientsText} flagged={flagged} />
+      ) : flagged.length > 0 ? (
+        /* Fallback: flagged-only list when no raw ingredient text */
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>All Flagged Ingredients</Text>
+          <Text style={styles.sectionTitle}>Flagged Ingredients</Text>
           <Text style={styles.sectionSub}>Tap each to see the reason and source.</Text>
-
           {severe.length > 0 && (
             <>
               <Text style={[styles.groupLabel, { color: SEVERITY_COLOR.severe }]}>Severe</Text>
@@ -422,7 +598,7 @@ export default function SkinSafetyTab({ analysis, skinType, skinConcerns, produc
             </>
           )}
         </View>
-      )}
+      ) : null}
 
       {/* ── Clean state ───────────────────────────────────────────────────── */}
       {isClean && (
@@ -677,5 +853,87 @@ const styles = StyleSheet.create({
     lineHeight: s(16),
     flex: 1,
     opacity: 0.7,
+  },
+
+  // ── What's Inside ──────────────────────────────────────────────────────────
+  whatsInsideSection: { gap: s(10) },
+  whatsInsideTitle: {
+    fontSize: s(20),
+    fontFamily: Font.bold,
+    color: Colors.textOffWhite,
+  },
+  whatsInsideCard: {
+    backgroundColor: Colors.canvasMid,
+    borderRadius: Radius.lg,
+    borderWidth: 1,
+    borderColor: Colors.border,
+    padding: s(16),
+  },
+  labelText: {
+    fontSize: s(14),
+    fontFamily: Font.regular,
+    color: Colors.textOffWhite,
+    lineHeight: s(24),
+  },
+  labelLegend: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: s(6),
+  },
+  labelLegendDot: {
+    width: s(8),
+    height: s(8),
+    borderRadius: s(4),
+    backgroundColor: '#FF9500',
+    flexShrink: 0,
+  },
+  labelLegendText: {
+    fontSize: s(11),
+    color: Colors.textMuted,
+    fontFamily: Font.regular,
+    flex: 1,
+  },
+  concentrationNote: {
+    backgroundColor: 'rgba(255,255,255,0.04)',
+    borderRadius: Radius.md,
+    padding: s(12),
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.08)',
+  },
+  concentrationNoteText: {
+    fontSize: s(12),
+    color: Colors.textMuted,
+    fontFamily: Font.regular,
+    lineHeight: s(18),
+  },
+
+  // ── All Ingredients list ───────────────────────────────────────────────────
+  allIngHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  allIngCount: {
+    fontSize: s(12),
+    color: Colors.textMuted,
+    fontFamily: Font.regular,
+  },
+  riskLevelLabel: {
+    fontSize: s(12),
+    fontFamily: Font.regular,
+    marginTop: s(2),
+  },
+  cleanIngRow: {
+    backgroundColor: Colors.canvasMid,
+    borderRadius: Radius.lg,
+    padding: s(12),
+    borderWidth: 1,
+    borderColor: Colors.border,
+  },
+  cleanRiskText: {
+    fontSize: s(12),
+    color: '#34C759',
+    fontFamily: Font.regular,
+    marginTop: s(2),
   },
 });
