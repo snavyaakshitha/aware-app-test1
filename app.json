@@ -5,8 +5,8 @@
     "scheme": "aware",
     "version": "0.1.0",
     "orientation": "portrait",
-    "userInterfaceStyle": "dark",
-    "backgroundColor": "#012F13",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#FAFAF7",
     "plugins": [
       [
         "expo-camera",

@@ -11,6 +11,7 @@ import type {
   SafetyAnalysis,
   AdditiveAnalysis,
   BannedSubstanceMatch,
+  GlobalBanResult,
 } from './scoring';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -165,12 +166,14 @@ export function fmtNum(v: number): string {
 }
 
 // ─── inferNovaGroup ───────────────────────────────────────────────────────────
-// Heuristic: products with no ingredient text are likely whole foods (NOVA 1).
+// Heuristic: single-word/short ingredient list → NOVA 1 (whole food).
+// No ingredient text at all → null (unknown); never assume NOVA 1 for products
+// with empty ingredient fields (baby formula, cosmetics, etc. get misclassified).
 
 export function inferNovaGroup(off: OffProductSnapshot): number | null {
   if (off.novaGroup !== null) return off.novaGroup;
   const text = (off.ingredientsText ?? '').trim();
-  if (!text) return 1;
+  if (!text) return null;
   const parts = text.split(/[,;]/).filter((p) => p.trim().length > 0);
   if (parts.length === 1 && text.split(' ').length <= 4) return 1;
   return null;
@@ -182,18 +185,21 @@ export function deriveOverallVerdict(
   safety: SafetyAnalysis,
   additives: AdditiveAnalysis,
   banned: BannedSubstanceMatch[],
+  globalBans: GlobalBanResult,
   nova: number | null,
   ns: string | null,
 ): OverallVerdict {
   // RED: hard stops
   if (safety.allergenConflicts.length > 0) return 'red';
   if (banned.length > 0) return 'red';
+  if (globalBans.hasSevereBan) return 'red';
   if (safety.avoidList.length > 0) return 'red';
   if (additives.severe.length > 0) return 'red';
 
   // YELLOW: concerns present
   if (safety.cautionList.length > 0) return 'yellow';
   if (additives.high.length > 0) return 'yellow';
+  if (globalBans.bannedIngredients.some((b) => b.ban_status === 'restricted')) return 'yellow';
   if (nova === 4 && ns !== null && ['d', 'e'].includes(ns.toLowerCase())) return 'yellow';
 
   // GREEN: positive signals with no medium+ additives

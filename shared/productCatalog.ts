@@ -92,7 +92,13 @@ async function fetchOpenFactsStyle(
       ingredientsText: String(p.ingredients_text ?? ''),
       allergensTags: Array.isArray(p.allergens_tags) ? (p.allergens_tags as string[]) : [],
       tracesTags: Array.isArray(p.traces_tags) ? (p.traces_tags as string[]) : [],
-      nutriscoreGrade: (p.nutriscore_grade as string) ?? null,
+      nutriscoreGrade: (() => {
+        const raw = p.nutriscore_grade as string | null | undefined;
+        if (!raw) return null;
+        const g = raw.toLowerCase().trim();
+        if (['not-applicable', 'not_applicable', 'unknown', 'n/a', ''].includes(g)) return null;
+        return ['a', 'b', 'c', 'd', 'e'].includes(g) ? g : null;
+      })(),
       novaGroup: typeof nova === 'number' ? nova : null,
       ingredientsAnalysisTags: Array.isArray(p.ingredients_analysis_tags)
         ? (p.ingredients_analysis_tags as string[])
@@ -117,33 +123,64 @@ function normalizeGtin(s: string): string {
 }
 
 async function fetchUsdaFdcProduct(barcode: string): Promise<OffFetchResult | null> {
-  const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim();
-  if (!apiKey) return null;
-
+  // USDA FDC text search does NOT reliably index by GTIN/UPC when given a raw barcode
+  // string as query. We try two GTIN-targeted strategies:
+  //   1. Solr-style field query: gtinUpc:<barcode> — works for exact 12-digit UPC-A matches.
+  //   2. Padded/stripped variants — USDA sometimes stores leading zeros differently.
+  // EAN-13 barcodes starting with a non-US country prefix (≠0) will typically not be in
+  // USDA (which covers US branded products). We detect those and skip early.
+  const apiKey = process.env.EXPO_PUBLIC_USDA_API_KEY?.trim() || 'DEMO_KEY';
   const USDA = 'https://api.nal.usda.gov/fdc/v1';
+
+  // Skip EAN-13 barcodes with non-US country codes (first digit ≠ 0)
+  const digits = barcode.replace(/\D/g, '');
+  if (digits.length === 13 && digits[0] !== '0') return null;
+
+  // Build candidate GTIN variants to try
+  const target = normalizeGtin(digits);
+  const candidates = new Set<string>([
+    digits,
+    target,
+    digits.padStart(12, '0'),
+    digits.padStart(13, '0'),
+  ]);
+
+  type SearchFood = { fdcId: number; gtinUpc?: string; description?: string; brandName?: string; brandOwner?: string };
+
+  const trySearch = async (query: string): Promise<SearchFood[] | null> => {
+    try {
+      const url = `${USDA}/foods/search?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(query)}&pageSize=10&dataType=Branded`;
+      const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA } });
+      if (!res.ok) return null;
+      const json = (await res.json()) as { foods?: SearchFood[] };
+      return json.foods?.length ? json.foods : null;
+    } catch {
+      return null;
+    }
+  };
+
+  let hit: SearchFood | undefined;
+
+  // Strategy 1: Solr field query for exact GTIN match (most precise)
+  for (const variant of candidates) {
+    const foods = await trySearch(`gtinUpc:${variant}`);
+    if (foods) {
+      hit = foods.find((f) => f.gtinUpc && normalizeGtin(f.gtinUpc) === target) ?? foods[0];
+      if (hit) break;
+    }
+  }
+
+  // Strategy 2: plain numeric search + GTIN filter (broader net, requires exact match)
+  if (!hit) {
+    const foods = await trySearch(digits);
+    if (foods) {
+      hit = foods.find((f) => f.gtinUpc && normalizeGtin(f.gtinUpc) === target);
+    }
+  }
+
+  if (!hit) return null;
+
   try {
-    const searchUrl = `${USDA}/foods/search?api_key=${encodeURIComponent(apiKey)}&query=${encodeURIComponent(
-      barcode
-    )}&pageSize=25&dataType=Branded`;
-    const sRes = await fetch(searchUrl, { headers: { Accept: 'application/json', 'User-Agent': UA } });
-    if (!sRes.ok) return null;
-    const sJson = (await sRes.json()) as {
-      foods?: Array<{
-        fdcId: number;
-        gtinUpc?: string;
-        description?: string;
-        brandName?: string;
-        brandOwner?: string;
-      }>;
-    };
-    const foods = sJson.foods;
-    if (!foods?.length) return null;
-
-    const target = normalizeGtin(barcode);
-    let hit = foods.find((f) => f.gtinUpc && normalizeGtin(f.gtinUpc) === target);
-    if (!hit) hit = foods.find((f) => f.gtinUpc === barcode);
-    if (!hit) hit = foods[0];
-
     const detailUrl = `${USDA}/food/${hit.fdcId}?api_key=${encodeURIComponent(apiKey)}`;
     const dRes = await fetch(detailUrl, { headers: { Accept: 'application/json', 'User-Agent': UA } });
     if (!dRes.ok) return null;
@@ -157,14 +194,14 @@ async function fetchUsdaFdcProduct(barcode: string): Promise<OffFetchResult | nu
 
     const ingredientsText = String(food.ingredients ?? '').trim();
     const brand = String(food.brandOwner ?? food.brandName ?? hit.brandOwner ?? hit.brandName ?? 'Unknown brand');
-    const name = String(food.description ?? hit.description ?? 'Packaged product (USDA)');
+    const name  = String(food.description ?? hit.description ?? 'Packaged product (USDA)');
 
     const product: OffProductSnapshot = {
       code: barcode,
       productName: name,
       brand,
       imageUrl: null,
-      ingredientsText: ingredientsText || 'See USDA FoodData Central for full label details.',
+      ingredientsText,
       allergensTags: [],
       tracesTags: [],
       nutriscoreGrade: null,
@@ -311,7 +348,11 @@ function validateProductPlausibility(
 }
 
 /**
- * Try Open Food Facts → Open Beauty Facts → Open Products Facts → USDA (if key) → openFDA.
+ * Lookup order: USDA FDC (food primary) → OFF → OBF → OPF → openFDA.
+ *
+ * USDA is tried first because it has authoritative ingredient text for US branded foods.
+ * If USDA finds the product but has no ingredient text, we continue to the OFF chain to
+ * try to get ingredient text, then fall back to the USDA partial result if OFF also fails.
  */
 export async function fetchProductByBarcode(barcode: string): Promise<OffFetchResult> {
   const code = barcode.trim();
@@ -326,16 +367,26 @@ export async function fetchProductByBarcode(barcode: string): Promise<OffFetchRe
     return { ok: true, product: { ...r.product, dataWarnings: v.warnings, dataConfidence: v.confidence } };
   }
 
+  // 1. USDA FoodData Central — primary source for food products
+  const usda = await fetchUsdaFdcProduct(code);
+  if (usda?.ok && usda.product.ingredientsText?.trim()) {
+    return applyValidation(usda);
+  }
+
+  // 2. Open Food/Beauty/Products Facts chain
+  let offResult: OffFetchResult | null = null;
   for (const entry of OPEN_FACTS_CHAIN) {
     const base =
       entry.source === 'off' ? getOffBaseUrl() : entry.baseUrl ?? 'https://world.openfoodfacts.org';
     const r = await fetchOpenFactsStyle(base, code, entry.source, entry.label);
-    if (r.ok) return applyValidation(r);
+    if (r.ok) { offResult = r; break; }
   }
+  if (offResult) return applyValidation(offResult);
 
-  const usda = await fetchUsdaFdcProduct(code);
+  // 3. USDA partial result (found product but no ingredient text) — better than nothing
   if (usda?.ok) return applyValidation(usda);
 
+  // 4. openFDA drug labels (OTC medications, drug-food crossovers)
   const fda = await fetchOpenFdaDrugLabel(code);
   if (fda?.ok) return applyValidation(fda);
 

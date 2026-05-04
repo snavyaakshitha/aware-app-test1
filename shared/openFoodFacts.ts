@@ -76,6 +76,34 @@ function parseNum(v: unknown): number | null {
   return isNaN(n) ? null : n;
 }
 
+/**
+ * Detects when an ingredient text is written in a non-English language and
+ * returns dataWarnings / dataConfidence fields accordingly.
+ *
+ * Heuristic: if the text has more than 10 words and fewer than 20% of them
+ * appear to be ASCII-only English (no accented chars, no Cyrillic, etc.),
+ * flag it as a non-English ingredient list.
+ */
+function detectIngredientLanguageWarnings(
+  text: string,
+): { dataWarnings?: string[]; dataConfidence?: 'high' | 'medium' | 'low' } {
+  if (!text || text.trim().length < 30) return {};
+  // Count words that contain ONLY ASCII letters/digits/punctuation
+  const words = text.split(/[\s,;()]+/).filter((w) => w.length > 2);
+  if (words.length < 8) return {};
+  const asciiOnly = words.filter((w) => /^[a-zA-Z0-9\-.']+$/.test(w)).length;
+  const ratio = asciiOnly / words.length;
+  if (ratio < 0.25) {
+    return {
+      dataWarnings: [
+        'Ingredient list appears to be in a non-English language. Additive detection may be incomplete.',
+      ],
+      dataConfidence: 'low',
+    };
+  }
+  return {};
+}
+
 export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFetchResult> {
   const fields = [
     'product_name',
@@ -144,7 +172,15 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFet
         ingredientsText: String(p.ingredients_text ?? ''),
         allergensTags: Array.isArray(p.allergens_tags) ? (p.allergens_tags as string[]) : [],
         tracesTags: Array.isArray(p.traces_tags) ? (p.traces_tags as string[]) : [],
-        nutriscoreGrade: (p.nutriscore_grade as string) ?? null,
+        nutriscoreGrade: (() => {
+          const raw = p.nutriscore_grade as string | null | undefined;
+          if (!raw) return null;
+          const g = raw.toLowerCase().trim();
+          // OFF sometimes returns 'not-applicable' or 'unknown' — treat as absent
+          if (['not-applicable', 'not_applicable', 'unknown', 'n/a', ''].includes(g)) return null;
+          if (['a', 'b', 'c', 'd', 'e'].includes(g)) return g;
+          return null;
+        })(),
         novaGroup: typeof nova === 'number' ? nova : null,
         ingredientsAnalysisTags: Array.isArray(p.ingredients_analysis_tags)
           ? (p.ingredients_analysis_tags as string[])
@@ -152,6 +188,7 @@ export async function fetchOpenFoodFactsProduct(barcode: string): Promise<OffFet
         nutriments: hasNutriments ? nutriments : null,
         catalogSource: 'off',
         catalogSourceLabel: 'Open Food Facts',
+        ...detectIngredientLanguageWarnings(String(p.ingredients_text ?? '')),
       },
     };
   } catch (e) {

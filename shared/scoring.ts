@@ -125,6 +125,28 @@ function parseIngredientsArray(text: string, _depth = 0): string[] {
   return result;
 }
 
+// ─── E-number extractor ───────────────────────────────────────────────────────
+// EU-format labels encode additives as E-numbers (e.g. "E129", "e 150d").
+// The DB stores them by their canonical name (e.g. "allura red ac") AND by the
+// E-number token. Extracting E-numbers separately ensures no additive is missed
+// when the ingredient text is in French, German, Polish, etc.
+
+function extractENumbers(text: string): string[] {
+  // Matches: e129, E 102, e150d, E-211, etc.
+  const ePattern = /\be\s*[-]?\s*(\d{3}[a-z]?(?:\([iiv]+\))?)\b/gi;
+  const seen = new Set<string>();
+  const results: string[] = [];
+  for (const m of text.matchAll(ePattern)) {
+    // Normalise: strip spaces/dashes, lowercase → "e129", "e150d"
+    const token = `e${m[1].toLowerCase().replace(/\s/g, '')}`;
+    if (!seen.has(token)) {
+      seen.add(token);
+      results.push(token);
+    }
+  }
+  return results;
+}
+
 // ─── Safety verdict derivation ────────────────────────────────────────────────
 
 function deriveSafetyVerdict(healthData: Record<string, unknown>): SafetyAnalysis['verdict'] {
@@ -132,6 +154,30 @@ function deriveSafetyVerdict(healthData: Record<string, unknown>): SafetyAnalysi
   if ((healthData?.avoid_list as unknown[])?.length > 0) return 'check';
   if ((healthData?.caution_list as unknown[])?.length > 0) return 'check';
   return 'safe';
+}
+
+// ─── Additive deduplication ───────────────────────────────────────────────────
+// The RPC uses substring-pattern matching (ILIKE '%pattern%'), which means a
+// single ingredient like "high fructose corn syrup" can fire multiple rules:
+// "high fructose corn syrup" (HIGH) + "corn syrup" (HIGH) + "fructose" (MEDIUM).
+// This deduplicates by keeping only the longest (most specific) match when one
+// matched ingredient name is a substring of another matched ingredient name.
+function deduplicateAdditives(matches: AdditiveMatch[]): AdditiveMatch[] {
+  if (matches.length <= 1) return matches;
+  // Sort longest-ingredient-name first so we keep the most specific match
+  const sorted = [...matches].sort(
+    (a, b) => b.ingredient.length - a.ingredient.length
+  );
+  const kept: AdditiveMatch[] = [];
+  for (const candidate of sorted) {
+    const lc = candidate.ingredient.toLowerCase();
+    // Discard if this ingredient name is a substring of an already-kept match
+    const dominated = kept.some((k) =>
+      k.ingredient.toLowerCase().includes(lc)
+    );
+    if (!dominated) kept.push(candidate);
+  }
+  return kept;
 }
 
 // ─── Main analysis function ───────────────────────────────────────────────────
@@ -150,6 +196,20 @@ export async function fetchProductAnalysis(
 
   let ingredients = parseIngredientsArray(ingredientsText);
   if (ingredients.length === 0) return null;
+
+  // Augment with E-numbers extracted directly from the raw text.
+  // EU/international labels use "e129", "e 150d" etc. which the parser may not
+  // split out as standalone tokens (e.g. "colour (e150d)" → "colour (e150d)").
+  // De-duplicate against already-parsed tokens so RPC payloads stay lean.
+  {
+    const eNums = extractENumbers(ingredientsText);
+    if (eNums.length > 0) {
+      const existing = new Set(ingredients);
+      for (const en of eNums) {
+        if (!existing.has(en)) ingredients.push(en);
+      }
+    }
+  }
 
   // Guard 1: suspiciously high ingredient count (AI hallucination signal)
   if (ingredients.length > 60) {
@@ -194,11 +254,16 @@ export async function fetchProductAnalysis(
     console.log(`[analysis] Profile: ${userConditions.length} conditions, ${userAllergens.length} allergens`);
   }
 
+  // Shape that every supabase.rpc() call resolves to.
+  type RpcResponse = { data: unknown; error: { message: string } | null };
+
   // 15s timeout wrapper — Supabase JS v2 doesn't support AbortSignal on rpc()
-  function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  // Uses `any` so PostgrestFilterBuilder (a thenable, not a full Promise) is accepted.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function withTimeout(promise: PromiseLike<any>, ms: number): Promise<RpcResponse> {
     return Promise.race([
-      promise,
-      new Promise<T>((_, reject) =>
+      Promise.resolve(promise) as Promise<RpcResponse>,
+      new Promise<RpcResponse>((_, reject) =>
         setTimeout(() => reject(new Error(`RPC timed out after ${ms}ms`)), ms),
       ),
     ]);
@@ -229,6 +294,7 @@ export async function fetchProductAnalysis(
       supabase.rpc('check_banned_ingredients_worldwide', {
         p_ingredients: ingredients,
         p_country_code: null, // null = all jurisdictions (US, EU, CA, GB, etc.)
+        p_product_category: productCategory, // filter out cosmetic-only bans from food products
       }),
       15_000,
     ),
@@ -286,7 +352,9 @@ export async function fetchProductAnalysis(
     ? healthResult.data[0]
     : healthResult.data) as Record<string, unknown> ?? {};
 
-  const additiveData = (additiveResult.data ?? []) as AdditiveMatch[];
+  const additiveData = deduplicateAdditives(
+    (additiveResult.data ?? []) as AdditiveMatch[]
+  );
 
   const bannedRaw = (bannedData ?? []) as Array<{
     ingredient: string;

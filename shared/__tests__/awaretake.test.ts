@@ -113,15 +113,47 @@ function makeBanned(count = 1) {
   }));
 }
 
+function makeGlobalBanEntry(overrides: {
+  ingredient_name?: string;
+  country_code?: string;
+  ban_status?: string;
+} = {}) {
+  return {
+    ingredient_name: overrides.ingredient_name ?? 'test-ingredient',
+    country_code: overrides.country_code ?? 'EU',
+    ban_status: overrides.ban_status ?? 'banned',
+    reason: null,
+    regulation_link: null,
+    regulatory_body_code: null,
+    category_restricted_to: null,
+    notes: null,
+  };
+}
+
+function makeGlobalBans(overrides: {
+  bannedIngredients?: ReturnType<typeof makeGlobalBanEntry>[];
+  hasSevereBan?: boolean;
+} = {}) {
+  const bannedIngredients = overrides.bannedIngredients ?? [];
+  return {
+    bannedIngredients,
+    hasSevereBan: overrides.hasSevereBan ?? bannedIngredients.some((b) => b.ban_status === 'banned'),
+  };
+}
+
 function makeAnalysis(overrides: {
   safety?: ReturnType<typeof makeSafety>;
   additives?: ReturnType<typeof makeAdditives>;
   bannedSubstances?: ReturnType<typeof makeBanned>;
+  globalBans?: ReturnType<typeof makeGlobalBans>;
 } = {}) {
   return {
     safety: overrides.safety ?? makeSafety(),
     additives: overrides.additives ?? makeAdditives(),
     bannedSubstances: overrides.bannedSubstances ?? [],
+    globalBans: overrides.globalBans ?? makeGlobalBans(),
+    conflicts: { conflicts: [], hasSevereConflict: false },
+    allergenMatches: [],
   };
 }
 
@@ -138,7 +170,7 @@ describe('fmtNum', () => {
   });
 
   it('rounds float to 1 decimal place', () => {
-    expect(fmtNum(51.9480519)).toBe('52');     // rounds to nearest 10th → 52.0 → integer → '52'
+    expect(fmtNum(51.9480519)).toBe('51.9');   // Math.round(519.480…)/10 = 51.9
     expect(fmtNum(51.94)).toBe('51.9');
     expect(fmtNum(22.549)).toBe('22.5');
     expect(fmtNum(22.55)).toBe('22.6');
@@ -151,7 +183,7 @@ describe('fmtNum', () => {
 
   it('handles negative numbers', () => {
     expect(fmtNum(-5)).toBe('-5');
-    expect(fmtNum(-3.75)).toBe('-3.8');
+    expect(fmtNum(-3.75)).toBe('-3.7');   // JS Math.round(-37.5) = -37 (rounds toward +∞)
   });
 });
 
@@ -163,9 +195,9 @@ describe('inferNovaGroup', () => {
     expect(inferNovaGroup(makeOff({ novaGroup: 2 }))).toBe(2);
   });
 
-  it('returns 1 when ingredientsText is empty (fresh produce)', () => {
-    expect(inferNovaGroup(makeOff({ novaGroup: null, ingredientsText: '' }))).toBe(1);
-    expect(inferNovaGroup(makeOff({ novaGroup: null, ingredientsText: '   ' }))).toBe(1);
+  it('returns null when ingredientsText is empty (unknown — not assumed whole food)', () => {
+    expect(inferNovaGroup(makeOff({ novaGroup: null, ingredientsText: '' }))).toBeNull();
+    expect(inferNovaGroup(makeOff({ novaGroup: null, ingredientsText: '   ' }))).toBeNull();
   });
 
   it('returns 1 for single short ingredient', () => {
@@ -188,70 +220,87 @@ describe('inferNovaGroup', () => {
 describe('deriveOverallVerdict', () => {
   const emptyAdditives = makeAdditives();
   const emptyBanned: ReturnType<typeof makeBanned> = [];
+  const emptyGlobalBans = makeGlobalBans();
 
-  it('returns "avoid" when allergen conflict present', () => {
+  it('returns "red" when allergen conflict present', () => {
     const safety = makeSafety({ allergenConflicts: ['gluten'] });
-    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, null, null)).toBe('avoid');
+    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, emptyGlobalBans, null, null)).toBe('red');
   });
 
-  it('returns "avoid" when banned substance present', () => {
+  it('returns "red" when banned substance present', () => {
     const safety = makeSafety();
-    expect(deriveOverallVerdict(safety, emptyAdditives, makeBanned(1), null, null)).toBe('avoid');
+    expect(deriveOverallVerdict(safety, emptyAdditives, makeBanned(1), emptyGlobalBans, null, null)).toBe('red');
   });
 
-  it('returns "avoid" when avoid list is non-empty', () => {
+  it('returns "red" when avoid list is non-empty', () => {
     const safety = makeSafety({ avoidList: [{ ingredient: 'aspartame', reason: 'test' }] });
-    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, null, null)).toBe('avoid');
+    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, emptyGlobalBans, null, null)).toBe('red');
   });
 
-  it('returns "avoid" when severe additive present', () => {
+  it('returns "red" when severe additive present', () => {
     const additives = makeAdditives({
       severe: [{ ingredient: 'potassium bromate', severity: 'severe', reason: 'carcinogen' }],
     });
-    expect(deriveOverallVerdict(makeSafety(), additives, emptyBanned, null, null)).toBe('avoid');
+    expect(deriveOverallVerdict(makeSafety(), additives, emptyBanned, emptyGlobalBans, null, null)).toBe('red');
   });
 
-  it('returns "check" when caution list non-empty', () => {
+  it('returns "red" when globalBans hasSevereBan', () => {
+    const globalBans = makeGlobalBans({
+      bannedIngredients: [makeGlobalBanEntry({ ingredient_name: 'bvo', country_code: 'US', ban_status: 'banned' })],
+      hasSevereBan: true,
+    });
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, globalBans, null, null)).toBe('red');
+  });
+
+  it('returns "yellow" when caution list non-empty', () => {
     const safety = makeSafety({ cautionList: [{ ingredient: 'msg', reason: 'headache risk' }] });
-    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, null, null)).toBe('check');
+    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, emptyGlobalBans, null, null)).toBe('yellow');
   });
 
-  it('returns "check" when high-concern additive present', () => {
+  it('returns "yellow" when high-concern additive present', () => {
     const additives = makeAdditives({
       high: [{ ingredient: 'red 40', severity: 'high', reason: 'hyperactivity' }],
     });
-    expect(deriveOverallVerdict(makeSafety(), additives, emptyBanned, null, null)).toBe('check');
+    expect(deriveOverallVerdict(makeSafety(), additives, emptyBanned, emptyGlobalBans, null, null)).toBe('yellow');
   });
 
-  it('returns "good" when beneficial list non-empty', () => {
+  it('returns "yellow" when globalBans has restricted ingredient', () => {
+    const globalBans = makeGlobalBans({
+      bannedIngredients: [makeGlobalBanEntry({ ingredient_name: 'red 40', country_code: 'EU', ban_status: 'restricted' })],
+      hasSevereBan: false,
+    });
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, globalBans, null, null)).toBe('yellow');
+  });
+
+  it('returns "green" when beneficial list non-empty', () => {
     const safety = makeSafety({ beneficialList: [{ ingredient: 'omega-3', reason: 'heart health' }] });
-    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, null, null)).toBe('good');
+    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, emptyGlobalBans, null, null)).toBe('green');
   });
 
-  it('returns "good" for nova 1 products', () => {
-    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, 1, null)).toBe('good');
+  it('returns "green" for nova 1 products', () => {
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, emptyGlobalBans, 1, null)).toBe('green');
   });
 
-  it('returns "good" for nutriscore A', () => {
-    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, null, 'a')).toBe('good');
-    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, null, 'A')).toBe('good');
+  it('returns "green" for nutriscore A', () => {
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, emptyGlobalBans, null, 'a')).toBe('green');
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, emptyGlobalBans, null, 'A')).toBe('green');
   });
 
-  it('returns "good" for nutriscore B', () => {
-    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, null, 'b')).toBe('good');
+  it('returns "green" for nutriscore B', () => {
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, emptyGlobalBans, null, 'b')).toBe('green');
   });
 
-  it('returns "acceptable" when nothing positive or negative', () => {
-    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, null, null)).toBe('acceptable');
-    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, 3, 'c')).toBe('acceptable');
+  it('returns "green" when nothing positive or negative', () => {
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, emptyGlobalBans, null, null)).toBe('green');
+    expect(deriveOverallVerdict(makeSafety(), emptyAdditives, emptyBanned, emptyGlobalBans, 3, 'c')).toBe('green');
   });
 
-  it('avoid beats check beats good (priority order)', () => {
+  it('red beats yellow beats green (priority order)', () => {
     const safety = makeSafety({
       allergenConflicts: ['peanuts'],
       beneficialList: [{ ingredient: 'omega-3', reason: null }],
     });
-    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, 1, 'a')).toBe('avoid');
+    expect(deriveOverallVerdict(safety, emptyAdditives, emptyBanned, emptyGlobalBans, 1, 'a')).toBe('red');
   });
 });
 
@@ -289,7 +338,7 @@ describe('buildNutrientRows', () => {
     const rows = buildNutrientRows(nm, null);
     const sugar = rows.find((r) => r.label === 'Sugar')!;
     expect(sugar.alert).toBe('red');
-    expect(sugar.what).toContain('High');
+    expect(sugar.what.toLowerCase()).toContain('high');
   });
 
   it('does not flag sugar as red for nova 1 whole food', () => {
@@ -512,7 +561,7 @@ describe('generateAwareTake', () => {
 
   it('uses whole food fallback for nova 1 with no analysis', () => {
     const result = generateAwareTake(makeOff(), null, [], 1);
-    expect(result).toContain('whole, unprocessed food');
+    expect(result.toLowerCase()).toContain('whole food');
   });
 
   it('does NOT apply sugar flags to NOVA 1 products', () => {

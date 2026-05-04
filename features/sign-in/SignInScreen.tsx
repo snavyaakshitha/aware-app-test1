@@ -3,6 +3,8 @@
  *
  * OAuth + email OTP / magic link (Supabase). Email flow uses `signInWithOtp` +
  * `verifyOtp`; magic links complete via deep link in `App.tsx`.
+ *
+ * v4 design: light cream #FAFAF7 bg, teal #1B5E52 hero top, white outline buttons.
  */
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
@@ -18,6 +20,7 @@ import {
   KeyboardAvoidingView,
   ScrollView,
   AppState,
+  Alert,
   type AppStateStatus,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
@@ -57,9 +60,11 @@ interface AuthButtonProps {
   onPress: () => void;
   /** Animated.Value driven by SignInScreen's stagger sequence */
   anim: Animated.Value;
+  /** primary = dark fill (Apple); secondary = white outline (default) */
+  variant?: 'primary' | 'secondary';
 }
 
-function AuthButton({ icon, label, onPress, anim }: AuthButtonProps) {
+function AuthButton({ icon, label, onPress, anim, variant = 'secondary' }: AuthButtonProps) {
   const pressScale = useRef(new Animated.Value(1)).current;
 
   const onPressIn = () =>
@@ -83,24 +88,29 @@ function AuthButton({ icon, label, onPress, anim }: AuthButtonProps) {
     outputRange: [s(28), 0],
   });
 
+  const isPrimary = variant === 'primary';
+
   return (
     <Animated.View
       style={{
         opacity: anim,
         transform: [{ translateY }, { scale: pressScale }],
-        marginBottom: s(12),
+        marginBottom: s(10),
       }}
     >
       <Pressable
         onPress={onPress}
         onPressIn={onPressIn}
         onPressOut={onPressOut}
-        android_ripple={{ color: 'rgba(0,0,0,0.06)', radius: s(171) }}
-        style={styles.button}
+        android_ripple={{ color: isPrimary ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)', radius: s(171) }}
+        style={[styles.button, isPrimary && styles.buttonPrimary]}
       >
-        {/* Provider logo box — 24×24 white square, Figma spec */}
-        <View style={styles.buttonIconBox}>{icon}</View>
-        <Text style={styles.buttonLabel}>{label}</Text>
+        <View style={[styles.buttonIconBox, isPrimary && styles.buttonIconBoxPrimary]}>
+          {icon}
+        </View>
+        <Text style={[styles.buttonLabel, isPrimary && styles.buttonLabelPrimary]}>
+          {label}
+        </Text>
       </Pressable>
     </Animated.View>
   );
@@ -118,7 +128,6 @@ interface Props {
 
 export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
   const [emailMode, setEmailMode] = useState(false);
-  /** `waiting` = magic link + optional OTP (Supabase often sends link-only emails). */
   const [emailStep, setEmailStep] = useState<'email' | 'waiting' | 'otp'>('email');
   const [email, setEmail] = useState('');
   const [otp, setOtp] = useState('');
@@ -145,7 +154,6 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
     const make = (v: Animated.Value) =>
       Animated.timing(v, { toValue: 1, duration: 480, useNativeDriver: true });
 
-    // Header first, then buttons staggered every 90 ms, terms last
     Animated.sequence([
       make(headerAnim),
       Animated.stagger(90, [make(btn1), make(btn2), make(btn3), make(btn4)]),
@@ -158,12 +166,11 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
     outputRange: [s(18), 0],
   });
 
-  // ── Provider icons — raw icons only; AuthButton wraps them in the white box
   const icons = {
     google:   <AntDesign   name="google"     size={s(15)} color="#4285F4" />,
-    apple:    <AntDesign   name="apple"     size={s(15)} color="#111111" />,
+    apple:    <AntDesign   name="apple"      size={s(15)} color="#FFFFFF" />,
     facebook: <FontAwesome5 name="facebook-f" size={s(14)} color="#1877F2" />,
-    email:    <Feather     name="mail"       size={s(14)} color="#2D2D2D" />,
+    email:    <Feather     name="mail"       size={s(14)} color="#101418" />,
   };
 
   const resetEmailFlow = useCallback(() => {
@@ -254,7 +261,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
         : 'Enter code';
   const emailHeaderSub =
     emailStep === 'email'
-      ? 'We’ll email you a secure link. If your project sends a one-time code, you can enter it in the next step.'
+      ? "We'll email you a secure link. If your project sends a one-time code, you can enter it in the next step."
       : emailStep === 'waiting'
         ? `We sent a message to ${email.trim() || 'your inbox'}. Tap the sign-in link in that email (magic link). Keep this screen open — we detect login automatically when you return.`
         : `If your email included a one-time code, enter it below.`;
@@ -265,9 +272,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
         style={styles.root}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <StatusBar style="light" />
-        <View style={styles.ellipse1} />
-        <View style={styles.ellipse5} />
+        <StatusBar style="dark" />
 
         <ScrollView
           contentContainerStyle={styles.emailScroll}
@@ -279,11 +284,11 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
             hitSlop={s(12)}
             style={styles.emailBackRow}
           >
-            <Feather name="arrow-left" size={s(22)} color="#FFFFFF" />
+            <Feather name="arrow-left" size={s(22)} color="#1B5E52" />
             <Text style={styles.emailBackText}>Back</Text>
           </Pressable>
 
-          <Text style={styles.loginTitle}>{emailHeaderTitle}</Text>
+          <Text style={styles.emailTitle}>{emailHeaderTitle}</Text>
           <Text style={styles.emailSub}>{emailHeaderSub}</Text>
 
           {emailStep === 'email' && (
@@ -291,7 +296,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
               <TextInput
                 style={styles.emailInput}
                 placeholder="you@email.com"
-                placeholderTextColor="rgba(255,255,255,0.45)"
+                placeholderTextColor="#8C9299"
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -305,7 +310,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
                 style={[styles.emailPrimaryBtn, busy && styles.emailPrimaryBtnDisabled]}
               >
                 {busy ? (
-                  <ActivityIndicator color="#012F13" />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.emailPrimaryBtnText}>Send sign-in link</Text>
                 )}
@@ -315,7 +320,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
 
           {emailStep === 'waiting' && (
             <>
-              <ActivityIndicator size="small" color="#FFFFFF" style={{ marginBottom: s(16), alignSelf: 'center' }} />
+              <ActivityIndicator size="small" color="#1B5E52" style={{ marginBottom: s(16), alignSelf: 'center' }} />
               <Text style={styles.emailWaitingBody}>
                 Waiting for you to tap the link in your email. After you confirm, switch back to this app.
               </Text>
@@ -342,7 +347,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
               <TextInput
                 style={styles.emailInput}
                 placeholder="One-time code"
-                placeholderTextColor="rgba(255,255,255,0.45)"
+                placeholderTextColor="#8C9299"
                 keyboardType="number-pad"
                 maxLength={8}
                 value={otp}
@@ -355,7 +360,7 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
                 style={[styles.emailPrimaryBtn, busy && styles.emailPrimaryBtnDisabled]}
               >
                 {busy ? (
-                  <ActivityIndicator color="#012F13" />
+                  <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <Text style={styles.emailPrimaryBtnText}>Verify & continue</Text>
                 )}
@@ -389,35 +394,34 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
     <View style={styles.root}>
       <StatusBar style="light" />
 
-      {/* ── Background: identical to SplashScreen for seamless transition ── */}
-      <View style={styles.ellipse1} />
-      <View style={styles.ellipse5} />
+      {/* ── Teal hero panel — top section ── */}
+      <View style={styles.heroPanel}>
+        {/* Decorative corner circle */}
+        <View style={styles.heroDecorCircle} />
 
-      {/* ── Watermark (Figma: Frame 10 at 14% opacity) ───────────────────── */}
-      <View style={styles.watermarkFrame} pointerEvents="none">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Text key={i} style={styles.watermarkText}>
-            Aware
-          </Text>
-        ))}
+        {/* App icon centered in hero */}
+        <View style={styles.heroContent}>
+          <View style={styles.iconCard}>
+            <Text style={styles.awText}>
+              <Text style={{ color: '#FFFFFF' }}>A</Text>
+              <Text style={{ color: '#7ECFC0' }}>w</Text>
+            </Text>
+          </View>
+          <Text style={styles.wordmark}>Aware</Text>
+          <Text style={styles.heroTagline}>Know what's in your products.</Text>
+        </View>
       </View>
 
-      {/* ── Content ──────────────────────────────────────────────────────── */}
+      {/* ── Bottom content panel ── */}
       <View style={styles.content}>
 
-        {/* App icon card — same as splash, visually anchors the brand */}
-        <View style={styles.iconCard}>
-          <Text style={styles.awText}>
-            <Text style={{ color: '#FFFFFF' }}>A</Text>
-            <Text style={{ color: '#8BC53D' }}>w</Text>
-          </Text>
+        {/* Brand badge */}
+        <View style={styles.brandRow}>
+          <Feather name="sun" size={s(11)} color="#1B5E52" />
+          <Text style={styles.brandLabel}>AWARE</Text>
         </View>
-        <Text style={styles.wordmark}>Aware</Text>
 
-        {/* Spacer between brand mark and login copy */}
-        <View style={{ height: s(32) }} />
-
-        {/* Header — animated entrance */}
+        {/* Header */}
         <Animated.View
           style={{
             opacity: headerAnim,
@@ -425,52 +429,53 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
             width: s(342),
           }}
         >
-          {/* Figma: Login 32px Inter Bold #FFFFFF lh 40px */}
           <Text style={styles.loginTitle}>Login</Text>
-          {/* Figma: Subtitle 18px Inter Regular #F0F0F0 lh 26px */}
           <Text style={styles.loginSubtitle}>Welcome back to the app</Text>
         </Animated.View>
 
-        <View style={{ height: s(24) }} />
+        <View style={{ height: s(20) }} />
 
-        {/* Auth buttons — 342×48, staggered entrance */}
+        {/* Auth buttons */}
         <View style={{ width: s(342) }}>
-          <AuthButton
-            icon={icons.google}
-            label="Continue with Google"
-            onPress={() => {
-              void onOAuthSignIn('google');
-            }}
-            anim={btn1}
-          />
           <AuthButton
             icon={icons.apple}
             label="Continue with Apple"
-            onPress={() => {
-              void onOAuthSignIn('apple');
-            }}
+            onPress={() =>
+              Alert.alert('Coming Soon', 'Apple Sign In will be available in the next update.')
+            }
             anim={btn2}
+            variant="primary"
+          />
+          <AuthButton
+            icon={icons.google}
+            label="Continue with Google"
+            onPress={() => void onOAuthSignIn('google')}
+            anim={btn1}
           />
           <AuthButton
             icon={icons.facebook}
             label="Continue with Facebook"
-            onPress={() => {
-              void onOAuthSignIn('facebook');
-            }}
+            onPress={() => void onOAuthSignIn('facebook')}
             anim={btn3}
           />
+          {/* Divider */}
+          <Animated.View style={{ opacity: btn3, flexDirection: 'row', alignItems: 'center', marginVertical: s(4) }}>
+            <View style={styles.dividerLine} />
+            <Text style={styles.dividerLabel}>or</Text>
+            <View style={styles.dividerLine} />
+          </Animated.View>
           <AuthButton
             icon={icons.email}
-            label="Continue with Email"
+            label="Continue with email"
             onPress={() => setEmailMode(true)}
             anim={btn4}
           />
         </View>
 
-        {/* Terms — required for App Store / Play Store */}
-        <Animated.View style={{ opacity: termsAnim, marginTop: s(8) }}>
+        {/* Terms */}
+        <Animated.View style={{ opacity: termsAnim, marginTop: s(4) }}>
           <Text style={styles.termsText}>
-            By continuing, you agree to our{' '}
+            Your data is private and never sold.{'\n'}By continuing, you agree to our{' '}
             <Text style={styles.termsLink}>Terms of Service</Text>
             {' '}and{' '}
             <Text style={styles.termsLink}>Privacy Policy</Text>
@@ -485,202 +490,175 @@ export default function SignInScreen({ onOAuthSignIn, shouldAnimate }: Props) {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#E2F0CC',
+    backgroundColor: '#FAFAF7',
     overflow: 'hidden',
   },
 
-  // Background layers (match SplashScreen exactly)
-  ellipse1: {
-    position: 'absolute',
-    width: s(583),
-    height: s(770),
-    borderRadius: s(400),
-    backgroundColor: '#79FFA8',
-    top: s(80),
-    left: s(-50),
-    ...Platform.select({
-      ios: {
-        shadowColor: '#79FFA8',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 1,
-        shadowRadius: s(400),
-      },
-      android: { opacity: 0.7 },
-      web: { filter: `blur(${s(400)}px)` } as any,
-    }),
-  },
-
-  ellipse5: {
-    position: 'absolute',
-    width: s(1034),
-    height: s(1055),
-    borderRadius: s(530),
-    backgroundColor: '#012F13',
-    top: s(-450),
-    left: s(-400),
-    ...Platform.select({
-      ios: {
-        shadowColor: '#012F13',
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 1,
-        shadowRadius: s(60),
-      },
-      android: { opacity: 0.85 },
-      web: { filter: `blur(${s(60)}px)` } as any,
-    }),
-  },
-
-  // Watermark: 5× "Aware" at 14% opacity, same as Figma Frame 10
-  watermarkFrame: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+  // ── Hero panel (top ~46%) ──────────────────────────────────────────────────
+  heroPanel: {
+    flex: 0.46,
+    backgroundColor: '#1B5E52',
     alignItems: 'center',
-    opacity: 0.14,
-    paddingHorizontal: s(10),
+    justifyContent: 'flex-end',
+    paddingBottom: s(32),
+    overflow: 'hidden',
   },
-  watermarkText: {
-    fontFamily: FONT_BOLD,
-    fontWeight: '500',
-    fontSize: s(160),
-    lineHeight: s(160),
-    letterSpacing: s(160) * -0.035,
-    textAlign: 'center',
-    color: 'transparent',
-    marginBottom: s(-92),
-    includeFontPadding: false,
-    ...Platform.select({
-      web: { WebkitTextStroke: `${s(2)}px #FFFFFF` } as any,
-      ios: {
-        textShadowColor: '#FFFFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 1.5,
-      },
-      android: {
-        textShadowColor: '#FFFFFF',
-        textShadowOffset: { width: 0, height: 0 },
-        textShadowRadius: 1.5,
-      },
-    }),
-  },
-
-  // Content container: pinned to bottom, centered horizontally — no bg so it
-  // floats transparently over the gradient (no visible panel break)
-  content: {
+  heroDecorCircle: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
+    width: s(320),
+    height: s(320),
+    borderRadius: s(160),
+    backgroundColor: 'rgba(255, 255, 255, 0.05)',
+    top: s(-100),
+    right: s(-80),
+  },
+  heroContent: {
     alignItems: 'center',
-    paddingBottom: s(48),
-    paddingTop: s(32),
   },
 
-  // App icon card — Figma: 78×78, #012F13, r=15
+  // App icon card — 78×78, dark teal bg
   iconCard: {
     width: s(78),
     height: s(78),
-    borderRadius: s(15),
-    backgroundColor: '#012F13',
+    borderRadius: s(18),
+    backgroundColor: 'rgba(0, 0, 0, 0.22)',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: s(4) },
-    shadowOpacity: 0.3,
-    shadowRadius: s(10),
-    elevation: 8,
+    marginBottom: s(12),
   },
   awText: {
     fontFamily: FONT_BOLD,
-    fontWeight: '500',
+    fontWeight: '700',
     fontSize: s(36),
-    lineHeight: s(36),
+    lineHeight: s(40),
     letterSpacing: s(36) * -0.035,
     textAlign: 'center',
   },
-
   wordmark: {
     fontFamily: FONT_BOLD,
-    fontWeight: '500',
-    fontSize: s(22),
-    lineHeight: s(22),
-    letterSpacing: s(22) * -0.035,
-    color: '#E2F0CC',
-    marginTop: s(10),
+    fontWeight: '600',
+    fontSize: s(20),
+    lineHeight: s(24),
+    letterSpacing: s(20) * -0.02,
+    color: 'rgba(255, 255, 255, 0.92)',
+    marginBottom: s(6),
+  },
+  heroTagline: {
+    fontFamily: FONT,
+    fontWeight: '400',
+    fontSize: s(13),
+    color: 'rgba(255, 255, 255, 0.65)',
+    textAlign: 'center',
   },
 
-  // Header — Figma: Login 32px Bold + Subtitle 18px Regular
-  loginTitle: {
+  // ── Bottom content panel ───────────────────────────────────────────────────
+  content: {
+    flex: 0.54,
+    alignItems: 'center',
+    paddingTop: s(20),
+    paddingBottom: s(24),
+    paddingHorizontal: s(24),
+  },
+
+  brandRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: s(5),
+    marginBottom: s(8),
+  },
+  brandLabel: {
     fontFamily: FONT_BOLD,
     fontWeight: '700',
-    fontSize: s(32),
-    lineHeight: s(40),
-    color: '#FFFFFF',
+    fontSize: s(11),
+    letterSpacing: s(11) * 0.1,
+    color: '#1B5E52',
+    textTransform: 'uppercase',
+  },
+
+  loginTitle: {
+    fontFamily: FONT_BOLD,
+    fontWeight: '800',
+    fontSize: s(26),
+    lineHeight: s(32),
+    color: '#101418',
   },
   loginSubtitle: {
     fontFamily: FONT,
     fontWeight: '400',
-    fontSize: s(18),
-    lineHeight: s(26),
-    color: '#F0F0F0',
+    fontSize: s(14),
+    lineHeight: s(20),
+    color: '#6F747C',
     marginTop: s(2),
   },
 
-  // Button — Figma: 342×48, #F3FFE0, r=13, stroke rgba(255,255,255,0.52)
+  // ── Auth buttons ───────────────────────────────────────────────────────────
   button: {
     width: s(342),
     height: s(48),
-    borderRadius: s(13),
-    backgroundColor: '#F3FFE0',
+    borderRadius: s(100),
+    backgroundColor: 'white',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.52)',
+    borderColor: '#E0E0DC',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: s(10),
-    // Frosted depth
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: s(2) },
-    shadowOpacity: 0.08,
-    shadowRadius: s(6),
-    elevation: 2,
   },
-
-  // 24×24 white icon box (Figma: Google frame fill #FFFFFF)
+  buttonPrimary: {
+    backgroundColor: '#101418',
+    borderColor: '#101418',
+  },
   buttonIconBox: {
     width: s(24),
     height: s(24),
     borderRadius: s(4),
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'white',
     alignItems: 'center',
     justifyContent: 'center',
   },
-
+  buttonIconBoxPrimary: {
+    backgroundColor: 'transparent',
+  },
   buttonLabel: {
     fontFamily: FONT,
-    fontWeight: '400',
-    fontSize: s(16),
-    lineHeight: s(24),
-    color: '#000000',
-    textAlign: 'center',
+    fontWeight: '500',
+    fontSize: s(15),
+    lineHeight: s(22),
+    color: '#101418',
+  },
+  buttonLabelPrimary: {
+    color: '#FFFFFF',
   },
 
-  // Terms footer
+  // ── Divider ────────────────────────────────────────────────────────────────
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E0E0DC',
+  },
+  dividerLabel: {
+    fontFamily: FONT,
+    fontSize: s(12),
+    color: '#8C9299',
+    marginHorizontal: s(10),
+  },
+
+  // ── Terms ──────────────────────────────────────────────────────────────────
   termsText: {
     fontFamily: FONT,
     fontWeight: '400',
-    fontSize: s(12),
-    lineHeight: s(18),
-    color: 'rgba(255, 255, 255, 0.55)',
+    fontSize: s(11),
+    lineHeight: s(17),
+    color: '#8C9299',
     textAlign: 'center',
-    paddingHorizontal: s(24),
+    paddingHorizontal: s(12),
   },
   termsLink: {
-    color: 'rgba(255, 255, 255, 0.85)',
+    color: '#1B5E52',
     textDecorationLine: 'underline',
   },
 
+  // ── Email flow ─────────────────────────────────────────────────────────────
   emailScroll: {
     flexGrow: 1,
     paddingHorizontal: s(24),
@@ -697,29 +675,35 @@ const styles = StyleSheet.create({
   emailBackText: {
     fontFamily: FONT,
     fontSize: s(16),
-    color: '#FFFFFF',
+    color: '#1B5E52',
+  },
+  emailTitle: {
+    fontFamily: FONT_BOLD,
+    fontWeight: '700',
+    fontSize: s(24),
+    lineHeight: s(30),
+    color: '#101418',
+    marginBottom: s(6),
   },
   emailSub: {
     fontFamily: FONT,
-    fontSize: s(15),
-    lineHeight: s(22),
-    color: 'rgba(255, 255, 255, 0.82)',
+    fontSize: s(14),
+    lineHeight: s(21),
+    color: '#6F747C',
     marginBottom: s(20),
-    width: s(342),
-    alignSelf: 'center',
   },
   emailInput: {
     width: s(342),
     alignSelf: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.14)',
+    backgroundColor: 'white',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.35)',
+    borderColor: '#E0E0DC',
     borderRadius: s(13),
     paddingVertical: s(14),
     paddingHorizontal: s(16),
     fontFamily: FONT,
     fontSize: s(16),
-    color: '#FFFFFF',
+    color: '#101418',
     marginBottom: s(14),
   },
   emailPrimaryBtn: {
@@ -727,19 +711,19 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     height: s(48),
     borderRadius: s(13),
-    backgroundColor: '#F3FFE0',
+    backgroundColor: '#1B5E52',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: s(12),
   },
   emailPrimaryBtnDisabled: {
-    opacity: 0.65,
+    opacity: 0.55,
   },
   emailPrimaryBtnText: {
     fontFamily: FONT_BOLD,
     fontWeight: '700',
     fontSize: s(16),
-    color: '#012F13',
+    color: '#FFFFFF',
   },
   resendBtn: {
     alignSelf: 'center',
@@ -748,13 +732,13 @@ const styles = StyleSheet.create({
   resendText: {
     fontFamily: FONT,
     fontSize: s(14),
-    color: 'rgba(255, 255, 255, 0.75)',
+    color: '#6F747C',
     textDecorationLine: 'underline',
   },
   emailError: {
     fontFamily: FONT,
     fontSize: s(13),
-    color: '#FFB4B4',
+    color: '#E53946',
     textAlign: 'center',
     marginTop: s(8),
     marginBottom: s(8),
@@ -764,19 +748,17 @@ const styles = StyleSheet.create({
     fontFamily: FONT,
     fontSize: s(12),
     lineHeight: s(18),
-    color: 'rgba(255, 255, 255, 0.5)',
+    color: '#8C9299',
     textAlign: 'center',
     marginTop: s(16),
     paddingHorizontal: s(8),
   },
   emailWaitingBody: {
     fontFamily: FONT,
-    fontSize: s(15),
-    lineHeight: s(22),
-    color: 'rgba(255, 255, 255, 0.88)',
+    fontSize: s(14),
+    lineHeight: s(21),
+    color: '#6F747C',
     marginBottom: s(16),
-    width: s(342),
-    alignSelf: 'center',
   },
   secondaryLink: {
     alignSelf: 'center',
@@ -786,7 +768,7 @@ const styles = StyleSheet.create({
   secondaryLinkText: {
     fontFamily: FONT,
     fontSize: s(14),
-    color: 'rgba(255, 255, 255, 0.9)',
+    color: '#1B5E52',
     textDecorationLine: 'underline',
   },
 });

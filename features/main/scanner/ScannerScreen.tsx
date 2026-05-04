@@ -295,18 +295,23 @@ export default function ScannerScreen({ navigation }: Props) {
 
         {/* Top bar */}
         <View style={[styles.topBar, { paddingTop: insets.top + s(10) }]}>
-          <Text style={styles.topTitle}>Scanner</Text>
-          <Pressable
-            onPress={() => setFlashOn((v) => !v)}
-            style={styles.flashBtn}
-            disabled={!showCamera}
-          >
-            <Ionicons
-              name={flashOn ? 'flash' : 'flash-off'}
-              size={s(22)}
-              color={!showCamera ? Colors.textFaint : flashOn ? Colors.accent : Colors.textMuted}
-            />
-          </Pressable>
+          <View>
+            <Text style={styles.topTitle}>Scan</Text>
+            <Text style={styles.topSubtitle}>Point camera at barcode</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8) }}>
+            <Pressable
+              onPress={() => setFlashOn((v) => !v)}
+              style={styles.flashBtn}
+              disabled={!showCamera}
+            >
+              <Ionicons
+                name={flashOn ? 'flash' : 'flash-off'}
+                size={s(20)}
+                color={!showCamera ? Colors.textFaint : flashOn ? Colors.accent : Colors.textMuted}
+              />
+            </Pressable>
+          </View>
         </View>
 
         {/* Center: scan zone (no touch interception) */}
@@ -527,21 +532,31 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: s(20),
     paddingBottom: s(14),
-    backgroundColor: 'rgba(1,20,8,0.75)',
+    backgroundColor: 'rgba(1,14,6,0.82)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.05)',
   },
   topTitle: {
     fontFamily: Font.bold,
-    fontSize: s(20),
+    fontSize: s(22),
     color: Colors.textWhite,
-    letterSpacing: 0.3,
+    fontWeight: '800',
+  },
+  topSubtitle: {
+    fontFamily: Font.regular,
+    fontSize: s(12),
+    color: Colors.textMuted,
+    marginTop: s(1),
   },
   flashBtn: {
     width: s(40),
     height: s(40),
     borderRadius: Radius.pill,
-    backgroundColor: 'rgba(255,255,255,0.10)',
+    backgroundColor: 'rgba(255,255,255,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.10)',
   },
 
   // ── Center scan zone ─────────────────────────────────────────────────

@@ -1,24 +1,24 @@
 /**
- * Aware — Profile Screen
- *
- * User's health profile, membership, stats, settings, legal.
+ * Aware — Profile Screen — v4 design.
+ * Flat cream background, no dark gradient header.
+ * Avatar → plan card → stats row → health profile rows card.
+ * All data logic unchanged.
  */
-import React, { useState } from 'react';
+import React from 'react';
 import {
-  View, Text, StyleSheet, ScrollView,
-  Pressable, Platform,
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Pressable,
+  Platform,
+  StatusBar,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Feather, Ionicons, MaterialIcons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
-import { Colors, Font, s, Radius, scoreColor } from '../../../shared/theme';
-import {
-  HEALTH_CONDITION_OPTIONS,
-  ALLERGEN_OPTIONS,
-  DIET_OPTIONS,
-  INGREDIENT_AVOID_OPTIONS,
-} from '../../../shared/mockData';
+import { Colors, Font, Radius, s } from '../../../shared/theme';
 import type { ProfileStackParamList } from '../../../shared/types';
 
 type Props = NativeStackScreenProps<ProfileStackParamList, 'Profile'>;
@@ -26,6 +26,7 @@ type Props = NativeStackScreenProps<ProfileStackParamList, 'Profile'>;
 // ─── Mock user data ───────────────────────────────────────────────────────────
 const MOCK_USER = {
   name: 'Jamie D.',
+  initials: 'JD',
   memberSince: 'April 2026',
   tier: 'free' as const,
   conditions: ['pcos', 'hypothyroidism'],
@@ -35,322 +36,121 @@ const MOCK_USER = {
   stats: { scanned: 24, lists: 3, cleanAvg: 87 },
 };
 
-function ExpandableSection({
-  title,
-  count,
-  children,
-}: {
-  title: string;
-  count: number;
-  children: React.ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <View style={exStyles.section}>
-      <Pressable onPress={() => setOpen(v => !v)} style={exStyles.sectionHeader}>
-        <Text style={exStyles.sectionTitle}>{title}</Text>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: s(8) }}>
-          <View style={exStyles.countBadge}>
-            <Text style={exStyles.countText}>{count}</Text>
-          </View>
-          <Feather
-            name={open ? 'chevron-up' : 'chevron-down'}
-            size={s(18)}
-            color={Colors.textMuted}
-          />
-        </View>
-      </Pressable>
-      {open && <View style={exStyles.sectionBody}>{children}</View>}
-    </View>
-  );
-}
+// ─── Health profile rows ──────────────────────────────────────────────────────
+const HEALTH_ROWS = [
+  { emoji: '❤️', label: 'Health Conditions', sub: 'PCOS, Hypothyroidism' },
+  { emoji: '🌸', label: 'Allergies', sub: 'Gluten, Dairy' },
+  { emoji: '🥗', label: 'Diet Preferences', sub: 'Gluten-free, Dairy-free' },
+  { emoji: '🚫', label: 'Ingredients to Avoid', sub: 'Seed oils, HFCS, Artificial dyes' },
+  { emoji: '🏠', label: 'Household Prefs', sub: 'Not set' },
+];
 
-const exStyles = StyleSheet.create({
-  section: {
-    borderBottomWidth: 1,
-    borderColor: Colors.divider,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: s(14),
-    paddingHorizontal: s(16),
-  },
-  sectionTitle: {
-    fontFamily: Font.medium,
-    fontWeight: '500',
-    fontSize: s(15),
-    color: Colors.textOffWhite,
-  },
-  countBadge: {
-    backgroundColor: 'rgba(139,197,61,0.15)',
-    borderRadius: Radius.pill,
-    paddingHorizontal: s(8),
-    paddingVertical: s(2),
-  },
-  countText: {
-    fontFamily: Font.bold,
-    fontWeight: '700',
-    fontSize: s(12),
-    color: Colors.accent,
-  },
-  sectionBody: {
-    paddingHorizontal: s(16),
-    paddingBottom: s(12),
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: s(6),
-  },
-});
-
-function Chip({ label, emoji }: { label: string; emoji?: string }) {
-  return (
-    <View style={chipStyles.chip}>
-      {emoji && <Text style={{ fontSize: s(13) }}>{emoji}</Text>}
-      <Text style={chipStyles.label}>{label}</Text>
-    </View>
-  );
-}
-
-const chipStyles = StyleSheet.create({
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: s(4),
-    backgroundColor: 'rgba(139,197,61,0.1)',
-    borderRadius: Radius.pill,
-    borderWidth: 1,
-    borderColor: 'rgba(139,197,61,0.25)',
-    paddingHorizontal: s(10),
-    paddingVertical: s(5),
-  },
-  label: {
-    fontFamily: Font.regular,
-    fontSize: s(12),
-    color: Colors.accent,
-  },
-});
-
-function SettingsRow({
-  icon,
-  label,
-  value,
-  danger,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value?: string;
-  danger?: boolean;
-}) {
-  return (
-    <Pressable style={settingStyles.row}>
-      <View style={settingStyles.iconBox}>{icon}</View>
-      <Text style={[settingStyles.label, danger && { color: Colors.danger }]}>{label}</Text>
-      <View style={settingStyles.right}>
-        {value && <Text style={settingStyles.value}>{value}</Text>}
-        {!danger && <Feather name="chevron-right" size={s(16)} color={Colors.textFaint} />}
-      </View>
-    </Pressable>
-  );
-}
-
-const settingStyles = StyleSheet.create({
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: s(16),
-    paddingVertical: s(13),
-    borderBottomWidth: 1,
-    borderColor: Colors.divider,
-  },
-  iconBox: { width: s(32), marginRight: s(12) },
-  label: {
-    flex: 1,
-    fontFamily: Font.regular,
-    fontSize: s(15),
-    color: Colors.textOffWhite,
-  },
-  right: { flexDirection: 'row', alignItems: 'center', gap: s(6) },
-  value: {
-    fontFamily: Font.regular,
-    fontSize: s(14),
-    color: Colors.textMuted,
-  },
-});
-
+// ─── ProfileScreen ────────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
 
-  const conditionLabels = MOCK_USER.conditions.map(id =>
-    HEALTH_CONDITION_OPTIONS.find(o => o.id === id)
-  ).filter(Boolean) as typeof HEALTH_CONDITION_OPTIONS;
-
-  const allergenLabels = MOCK_USER.allergens.map(id =>
-    ALLERGEN_OPTIONS.find(o => o.id === id)
-  ).filter(Boolean) as typeof ALLERGEN_OPTIONS;
-
-  const dietLabels = MOCK_USER.diets.map(id =>
-    DIET_OPTIONS.find(o => o.id === id)
-  ).filter(Boolean) as typeof DIET_OPTIONS;
-
-  const avoidLabels = MOCK_USER.avoids.map(id =>
-    INGREDIENT_AVOID_OPTIONS.find(o => o.id === id)
-  ).filter(Boolean) as typeof INGREDIENT_AVOID_OPTIONS;
-
   return (
     <View style={styles.root}>
-      <View style={styles.ellipse1} />
-      <View style={styles.ellipse5} />
+      <StatusBar barStyle="dark-content" backgroundColor={Colors.canvas} />
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: s(40) }}
         showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.scroll,
+          { paddingTop: insets.top + s(8), paddingBottom: insets.bottom + s(100) },
+        ]}
       >
-        {/* Header space */}
-        <View style={{ height: insets.top + s(12) }} />
+        {/* ── 3. Header row ─────────────────────────────────────────── */}
+        <View style={styles.headerRow}>
+          <Text style={styles.screenTitle}>Profile</Text>
+          <Pressable style={styles.settingsBtn}>
+            <Feather name="settings" size={s(18)} color={Colors.textPrimary} />
+          </Pressable>
+        </View>
 
-        {/* Avatar + name */}
+        {/* ── 4. Avatar section ─────────────────────────────────────── */}
         <View style={styles.avatarSection}>
           <View style={styles.avatarCircle}>
-            <Text style={styles.avatarInitials}>JD</Text>
+            <Text style={styles.avatarInitials}>{MOCK_USER.initials}</Text>
           </View>
           <Text style={styles.userName}>{MOCK_USER.name}</Text>
           <Text style={styles.memberSince}>Member since {MOCK_USER.memberSince}</Text>
           <Pressable
             onPress={() => navigation.navigate('EditPreferences')}
-            style={styles.editBtn}
+            style={styles.editNameBtn}
           >
-            <Feather name="edit-2" size={s(13)} color={Colors.textDark} />
-            <Text style={styles.editBtnText}>Edit Profile</Text>
+            <Feather name="edit-2" size={s(13)} color={Colors.textPrimary} />
+            <Text style={styles.editNameText}>Edit name & photo</Text>
           </Pressable>
         </View>
 
-        {/* Membership card */}
-        <View style={styles.memberCard}>
-          <View style={styles.memberLeft}>
-            <Text style={styles.memberTier}>
-              {MOCK_USER.tier === 'free' ? '🌱 Free Plan' : '💚 Supporter'}
-            </Text>
-            <Text style={styles.memberDesc}>
-              Pay what you like · $30/year · Free trial
-            </Text>
+        {/* ── 5. Plan card ──────────────────────────────────────────── */}
+        <View style={styles.planCard}>
+          <Text style={styles.planEmoji}>🌱</Text>
+          <View style={styles.planText}>
+            <Text style={styles.planTitle}>Free Plan</Text>
+            <Text style={styles.planSub}>Pay what you like · $30/year</Text>
           </View>
-          <Pressable style={styles.upgradeBtn}>
-            <Text style={styles.upgradeBtnText}>Upgrade →</Text>
-          </Pressable>
+          <View style={styles.upgradeChip}>
+            <Text style={styles.upgradeChipText}>Upgrade</Text>
+          </View>
         </View>
 
-        {/* Stats */}
+        {/* ── 6. Stats row ──────────────────────────────────────────── */}
         <View style={styles.statsRow}>
           {[
-            { label: 'Scanned', value: MOCK_USER.stats.scanned, icon: '📦' },
-            { label: 'Lists', value: MOCK_USER.stats.lists, icon: '📋' },
-            { label: 'Avg Score', value: MOCK_USER.stats.cleanAvg, icon: '🌿' },
-          ].map(stat => (
+            { value: '24', label: 'Scans' },
+            { value: '3', label: 'Lists' },
+            { value: '87', label: 'Score' },
+          ].map((stat) => (
             <View key={stat.label} style={styles.statCard}>
-              <Text style={styles.statEmoji}>{stat.icon}</Text>
-              <Text style={[styles.statValue, stat.label === 'Avg Score' && { color: scoreColor(stat.value) }]}>
-                {stat.value}{stat.label === 'Avg Score' ? '/100' : ''}
-              </Text>
+              <Text style={styles.statValue}>{stat.value}</Text>
               <Text style={styles.statLabel}>{stat.label}</Text>
             </View>
           ))}
         </View>
 
-        {/* Preferences card */}
-        <View style={styles.prefCard}>
-          <View style={styles.prefHeader}>
-            <Text style={styles.prefTitle}>My Health Profile</Text>
-            <Pressable onPress={() => navigation.navigate('EditPreferences')}>
-              <Text style={styles.editLink}>Edit →</Text>
+        {/* ── 7. Health profile section ─────────────────────────────── */}
+        <View style={styles.healthSection}>
+          {/* Section header */}
+          <View style={styles.healthHeaderRow}>
+            <View>
+              <Text style={styles.healthTitle}>Health profile</Text>
+            </View>
+            <Pressable
+              onPress={() => navigation.navigate('EditPreferences')}
+              style={styles.editAllBtn}
+            >
+              <Text style={styles.editAllText}>Edit all</Text>
             </Pressable>
           </View>
+          <Text style={styles.healthSub}>
+            Your profile personalizes scan results and recommendations.
+          </Text>
 
-          <ExpandableSection title="Health Conditions" count={conditionLabels.length}>
-            {conditionLabels.map(c => (
-              <Chip key={c.id} label={c.label} emoji={c.emoji} />
+          {/* Rows card */}
+          <View style={styles.healthRowsCard}>
+            {HEALTH_ROWS.map((row, index) => (
+              <React.Fragment key={row.label}>
+                <Pressable style={styles.healthRow}>
+                  <View style={styles.healthRowIcon}>
+                    <Text style={styles.healthRowEmoji}>{row.emoji}</Text>
+                  </View>
+                  <View style={styles.healthRowText}>
+                    <Text style={styles.healthRowLabel}>{row.label}</Text>
+                    <Text style={styles.healthRowSub} numberOfLines={1}>
+                      {row.sub}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={s(16)} color="#C0C0BC" />
+                </Pressable>
+                {index < HEALTH_ROWS.length - 1 && <View style={styles.rowDivider} />}
+              </React.Fragment>
             ))}
-          </ExpandableSection>
-
-          <ExpandableSection title="Allergens" count={allergenLabels.length}>
-            {allergenLabels.map(a => (
-              <Chip key={a.id} label={a.label} emoji={a.emoji} />
-            ))}
-          </ExpandableSection>
-
-          <ExpandableSection title="Diet Preferences" count={dietLabels.length}>
-            {dietLabels.map(d => (
-              <Chip key={d.id} label={d.label} emoji={(d as any).emoji} />
-            ))}
-          </ExpandableSection>
-
-          <ExpandableSection title="Ingredients to Avoid" count={avoidLabels.length}>
-            {avoidLabels.map(a => (
-              <Chip key={a.id} label={a.label} emoji={a.emoji} />
-            ))}
-          </ExpandableSection>
-        </View>
-
-        {/* Settings */}
-        <View style={styles.settingsCard}>
-          <Text style={styles.settingsHeader}>Settings</Text>
-          <SettingsRow
-            icon={<Ionicons name="notifications-outline" size={s(18)} color={Colors.textMuted} />}
-            label="Notifications"
-            value="On"
-          />
-          <SettingsRow
-            icon={<Feather name="map-pin" size={s(18)} color={Colors.textMuted} />}
-            label="Location"
-            value="San Francisco, CA"
-          />
-          <SettingsRow
-            icon={<Feather name="moon" size={s(18)} color={Colors.textMuted} />}
-            label="Appearance"
-            value="Dark"
-          />
-          <SettingsRow
-            icon={<Feather name="globe" size={s(18)} color={Colors.textMuted} />}
-            label="Language"
-            value="English"
-          />
-          <SettingsRow
-            icon={<Feather name="shield" size={s(18)} color={Colors.textMuted} />}
-            label="Data & Privacy"
-          />
-          <SettingsRow
-            icon={<Feather name="help-circle" size={s(18)} color={Colors.textMuted} />}
-            label="Help & Feedback"
-          />
-          <SettingsRow
-            icon={<Ionicons name="star-outline" size={s(18)} color={Colors.textMuted} />}
-            label="Rate Aware ⭐"
-          />
-        </View>
-
-        {/* Legal */}
-        <View style={styles.legalCard}>
-          <Text style={styles.settingsHeader}>Legal</Text>
-          <SettingsRow
-            icon={<Feather name="file-text" size={s(18)} color={Colors.textMuted} />}
-            label="Terms of Service"
-          />
-          <SettingsRow
-            icon={<Feather name="lock" size={s(18)} color={Colors.textMuted} />}
-            label="Privacy Policy"
-          />
-          <View style={styles.disclaimer}>
-            <Feather name="alert-circle" size={s(14)} color={Colors.textMuted} />
-            <Text style={styles.disclaimerText}>
-              Aware recommendations are based on preferences you set in this app.
-              Always consult a qualified healthcare professional for medical advice.
-              Results may vary based on profile settings.
-            </Text>
           </View>
         </View>
 
-        {/* Sign out */}
+        {/* ── Sign out ──────────────────────────────────────────────── */}
         <Pressable style={styles.signOutBtn}>
           <Text style={styles.signOutText}>Sign Out</Text>
         </Pressable>
@@ -361,210 +161,246 @@ export default function ProfileScreen({ navigation }: Props) {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.canvas, overflow: 'hidden' },
-  ellipse1: {
-    position: 'absolute', width: s(583), height: s(770), borderRadius: s(400),
-    backgroundColor: '#79FFA8', top: s(80), left: s(-50),
-    ...Platform.select({ web: { filter: `blur(${s(400)}px)` } as any }),
+  root: {
+    flex: 1,
+    backgroundColor: Colors.canvas,
   },
-  ellipse5: {
-    position: 'absolute', width: s(1034), height: s(1055), borderRadius: s(530),
-    backgroundColor: Colors.canvasDark, top: s(-450), left: s(-400),
-    ...Platform.select({ web: { filter: `blur(${s(60)}px)` } as any }),
+  scroll: {
+    paddingHorizontal: s(20),
   },
 
+  // Header row
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: s(12),
+  },
+  screenTitle: {
+    fontSize: s(22),
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    fontFamily: Font.bold,
+  },
+  settingsBtn: {
+    width: s(38),
+    height: s(38),
+    borderRadius: Radius.pill,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#E0E0DC',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  // Avatar section
   avatarSection: {
     alignItems: 'center',
-    paddingTop: s(8),
+    paddingTop: s(12),
     paddingBottom: s(20),
   },
   avatarCircle: {
-    width: s(72),
-    height: s(72),
-    borderRadius: s(36),
-    backgroundColor: 'rgba(139,197,61,0.2)',
-    borderWidth: 2,
-    borderColor: Colors.accent,
+    width: s(80),
+    height: s(80),
+    borderRadius: s(40),
+    backgroundColor: '#EEF2EE',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: 'white',
     marginBottom: s(12),
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 8 },
+      android: { elevation: 3 },
+    }),
   },
   avatarInitials: {
-    fontFamily: Font.bold,
-    fontWeight: '700',
     fontSize: s(24),
+    fontWeight: '800',
     color: Colors.accent,
+    fontFamily: Font.bold,
   },
   userName: {
-    fontFamily: Font.bold,
-    fontWeight: '700',
     fontSize: s(22),
-    color: Colors.textWhite,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    fontFamily: Font.bold,
     marginBottom: s(4),
   },
   memberSince: {
-    fontFamily: Font.regular,
     fontSize: s(13),
-    color: Colors.textMuted,
+    color: Colors.textTertiary,
+    fontFamily: Font.regular,
     marginBottom: s(12),
   },
-  editBtn: {
+  editNameBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: s(6),
-    backgroundColor: Colors.accentLight,
+    backgroundColor: 'white',
+    borderWidth: 1,
+    borderColor: '#E0E0DC',
     borderRadius: Radius.pill,
     paddingHorizontal: s(14),
     paddingVertical: s(7),
   },
-  editBtnText: {
-    fontFamily: Font.bold,
-    fontWeight: '700',
+  editNameText: {
     fontSize: s(13),
-    color: Colors.textDark,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    fontFamily: Font.medium,
   },
 
-  memberCard: {
+  // Plan card
+  planCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: s(16),
-    marginBottom: s(16),
-    backgroundColor: Colors.canvasMid,
+    backgroundColor: 'white',
     borderRadius: Radius.xl,
+    paddingVertical: s(14),
+    paddingHorizontal: s(16),
+    marginBottom: s(16),
     borderWidth: 1,
-    borderColor: 'rgba(139,197,61,0.25)',
-    padding: s(16),
-    gap: s(12),
+    borderColor: '#E8E8E4',
+    gap: s(10),
   },
-  memberLeft: { flex: 1 },
-  memberTier: {
-    fontFamily: Font.bold,
-    fontWeight: '700',
+  planEmoji: { fontSize: s(20) },
+  planText: { flex: 1 },
+  planTitle: {
     fontSize: s(15),
-    color: Colors.textWhite,
-    marginBottom: s(3),
-  },
-  memberDesc: {
-    fontFamily: Font.regular,
-    fontSize: s(12),
-    color: Colors.textMuted,
-  },
-  upgradeBtn: {
-    backgroundColor: Colors.accent,
-    borderRadius: Radius.md,
-    paddingHorizontal: s(14),
-    paddingVertical: s(8),
-  },
-  upgradeBtnText: {
-    fontFamily: Font.bold,
     fontWeight: '700',
+    color: Colors.textPrimary,
+    fontFamily: Font.bold,
+  },
+  planSub: {
+    fontSize: s(12),
+    color: Colors.textSecondary,
+    fontFamily: Font.regular,
+    marginTop: s(1),
+  },
+  upgradeChip: {
+    backgroundColor: Colors.tealLight,
+    borderRadius: Radius.pill,
+    paddingHorizontal: s(12),
+    paddingVertical: s(6),
+  },
+  upgradeChipText: {
     fontSize: s(13),
-    color: Colors.textDark,
+    fontWeight: '600',
+    color: Colors.accent,
+    fontFamily: Font.medium,
   },
 
+  // Stats row
   statsRow: {
     flexDirection: 'row',
-    gap: s(8),
-    marginHorizontal: s(16),
-    marginBottom: s(16),
+    gap: s(10),
+    marginBottom: s(20),
   },
   statCard: {
     flex: 1,
-    backgroundColor: 'rgba(2,47,19,0.2)',
-    borderRadius: Radius.lg,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    padding: s(12),
+    backgroundColor: 'white',
+    borderRadius: s(18),
+    paddingVertical: s(14),
+    paddingHorizontal: s(10),
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E8E8E4',
   },
-  statEmoji: { fontSize: s(20), marginBottom: s(4) },
   statValue: {
+    fontSize: s(17),
+    fontWeight: '800',
+    color: Colors.textPrimary,
     fontFamily: Font.bold,
-    fontWeight: '700',
-    fontSize: s(18),
-    color: Colors.textWhite,
+    marginBottom: s(3),
   },
   statLabel: {
-    fontFamily: Font.regular,
     fontSize: s(11),
-    color: Colors.textMuted,
-    marginTop: s(2),
+    color: Colors.textSecondary,
+    fontFamily: Font.regular,
   },
 
-  prefCard: {
-    marginHorizontal: s(16),
-    marginBottom: s(16),
-    backgroundColor: 'rgba(2,47,19,0.2)',
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
+  // Health profile section
+  healthSection: {
+    marginBottom: s(24),
   },
-  prefHeader: {
+  healthHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: s(16),
-    paddingVertical: s(14),
-    borderBottomWidth: 1,
-    borderColor: Colors.divider,
+    marginBottom: s(4),
   },
-  prefTitle: {
-    fontFamily: Font.bold,
+  healthTitle: {
+    fontSize: s(17),
     fontWeight: '700',
-    fontSize: s(16),
-    color: Colors.textWhite,
+    color: Colors.textPrimary,
+    fontFamily: Font.bold,
   },
-  editLink: {
-    fontFamily: Font.medium,
-    fontWeight: '500',
+  editAllBtn: {
+    borderWidth: 1.5,
+    borderColor: Colors.accent,
+    borderRadius: Radius.pill,
+    paddingHorizontal: s(12),
+    paddingVertical: s(5),
+  },
+  editAllText: {
     fontSize: s(13),
+    fontWeight: '600',
     color: Colors.accent,
+    fontFamily: Font.medium,
   },
-
-  settingsCard: {
-    marginHorizontal: s(16),
-    marginBottom: s(16),
-    backgroundColor: 'rgba(2,47,19,0.2)',
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-  },
-  legalCard: {
-    marginHorizontal: s(16),
-    marginBottom: s(16),
-    backgroundColor: 'rgba(2,47,19,0.2)',
-    borderRadius: Radius.xl,
-    borderWidth: 1,
-    borderColor: Colors.border,
-    overflow: 'hidden',
-  },
-  settingsHeader: {
-    fontFamily: Font.bold,
-    fontWeight: '700',
-    fontSize: s(13),
-    color: Colors.textMuted,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    paddingHorizontal: s(16),
-    paddingVertical: s(12),
-  },
-  disclaimer: {
-    flexDirection: 'row',
-    gap: s(8),
-    padding: s(16),
-    paddingTop: s(8),
-  },
-  disclaimerText: {
-    flex: 1,
-    fontFamily: Font.regular,
+  healthSub: {
     fontSize: s(12),
-    color: Colors.textMuted,
+    color: Colors.textSecondary,
+    fontFamily: Font.regular,
+    marginBottom: s(12),
     lineHeight: s(18),
   },
+  healthRowsCard: {
+    backgroundColor: 'white',
+    borderRadius: Radius.xl,
+    borderWidth: 1,
+    borderColor: '#E8E8E4',
+    overflow: 'hidden',
+  },
+  healthRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: s(12),
+    paddingHorizontal: s(14),
+    gap: s(12),
+  },
+  healthRowIcon: {
+    width: s(36),
+    height: s(36),
+    borderRadius: s(10),
+    backgroundColor: Colors.canvas2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  healthRowEmoji: { fontSize: s(18) },
+  healthRowText: { flex: 1 },
+  healthRowLabel: {
+    fontSize: s(14),
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    fontFamily: Font.medium,
+  },
+  healthRowSub: {
+    fontSize: s(12),
+    color: Colors.textSecondary,
+    fontFamily: Font.regular,
+    marginTop: s(1),
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: Colors.canvas2,
+    marginHorizontal: s(14),
+  },
 
+  // Sign out
   signOutBtn: {
     alignSelf: 'center',
     paddingVertical: s(12),
@@ -572,15 +408,15 @@ const styles = StyleSheet.create({
     marginBottom: s(8),
   },
   signOutText: {
-    fontFamily: Font.regular,
     fontSize: s(15),
     color: Colors.danger,
+    fontFamily: Font.regular,
   },
   versionText: {
-    fontFamily: Font.regular,
     fontSize: s(12),
-    color: Colors.textFaint,
+    color: Colors.textTertiary,
     textAlign: 'center',
+    fontFamily: Font.regular,
     paddingBottom: s(8),
   },
 });
